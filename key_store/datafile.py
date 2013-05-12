@@ -61,19 +61,22 @@ class KeyPage(object):
    pointers.
    """
    __slots__ = ["dirty", "keys", "undo_keys", "page_size", "max_entries"]
-   def __init__(self, data):
+   def __init__(self, d, page_size):
       entry_size = struct.calcsize(key_fmt)
       
       self.dirty = False
       self.keys = {}
       self.undo_keys = {}
-      self.page_size = len(data)
+      self.page_size = page_size
       self.max_entries = self.page_size / entry_size
-      offset = 0
       for i in range(0, self.max_entries):
-         key, value_pointer = struct.unpack_from(key_fmt, data, offset)
-         offset += entry_size
-         self.keys[key] = value_pointer
+         data = d.read(entry_size)
+         if len(data) < entry_size:
+            break
+         k,v = struct.unpack(key_fmt, data)
+         if k == 0 and v == 0:
+            break
+         self.keys[k] = v
          
    def get(self, key, default=None):
       """
@@ -140,10 +143,9 @@ class KeyPage(object):
          bytes_to_clear-=len(data)
       
       if bytes_to_clear>0:
-         d.write(struct.pack("%sc" % bytes_to_clear, 0))
+         d.write("\x00" * bytes_to_clear)
       self.dirty = False
       
-
 class DataFile(object):
    """
    :synopsis: Manages the data file header and large-scale operations of the data file.
