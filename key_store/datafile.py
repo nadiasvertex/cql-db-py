@@ -107,7 +107,7 @@ class KeyPage(object):
          return False
          
       if not self.undo_keys.has_key(key):
-         self.undo_keys[key] = value
+         self.undo_keys[key] = old_value
          
       self.keys[key] = value
       self.dirty = True

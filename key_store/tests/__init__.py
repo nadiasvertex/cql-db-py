@@ -76,6 +76,27 @@ class TestKeyPage(unittest.TestCase):
       with open(self.filename, "r+b") as f:
          kp = datafile.KeyPage(f, 8192)
          self.assertEqual(kp.get(100), 500)
+         
+   def test_commit(self):
+      from key_store import datafile
+      
+      with open(self.filename, "w+b") as f:
+         kp = datafile.KeyPage(f, 8192)
+         kp.set(100, 500)
+         kp.commit()
+         self.assertEqual(kp.get(100), 500)
+         
+   def test_rollback(self):
+      from key_store import datafile
+      
+      with open(self.filename, "w+b") as f:
+         kp = datafile.KeyPage(f, 8192)
+         kp.set(100, 500)
+         kp.commit()
+         kp.set(100, 250)
+         kp.rollback()
+         self.assertEqual(kp.get(100), 500)
+
         
 def get_suite():
     "Return a unittest.TestSuite."
