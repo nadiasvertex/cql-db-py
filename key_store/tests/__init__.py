@@ -106,6 +106,17 @@ class TestKeyPage(unittest.TestCase):
          kp.rollback()
          self.assertEqual(kp.get(100), 500)
 
+class TestFreePage(unittest.TestCase):
+   filename = "test.free_page"
+   
+   def setUp(self):
+      if os.path.exists(self.filename):
+         os.unlink(self.filename)
+
+   def test_can_create(self):
+      from key_store import datafile
+      with open(self.filename, "w+b") as f:
+         fp = datafile.FreePage(f, 8192)
         
 def get_suite():
     "Return a unittest.TestSuite."
