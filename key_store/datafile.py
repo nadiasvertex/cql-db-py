@@ -95,7 +95,7 @@ class KeyPage(object):
       :synopsis: Write a new key, if and only if we have space to write it.
       
       :param key: The key to write.
-      :param value: The value pointer to write.
+      :param value: The value pointer to write. If value is None the key is deleted.
       :returns: False if we were unable to write the new value, True otherwise.
       
       Writes a new key. If we have too many keys, we will fail. The old value is
@@ -109,10 +109,17 @@ class KeyPage(object):
       if not self.undo_keys.has_key(key):
          self.undo_keys[key] = old_value
          
-      self.keys[key] = value
+      if value == None:
+         del self.keys[key]
+      else:
+         self.keys[key] = value
+         
       self.dirty = True
       
       return True
+      
+   def delete(self, key):
+      self.set(key, None)
       
    def commit(self):
       """
@@ -134,8 +141,13 @@ class KeyPage(object):
    def flush(self, d):
       """
       :synopsis: Writes the key page to disk. The file object must be positioned
-      where the data should be written. Unused space on the page will be cleared.
+                where the data should be written. Unused space on the page will 
+                be cleared.
+      :param d: A file object.          
+      
+      :notes: A flush implicitly causes a commit operation to be performed.
       """
+      self.commit()
       bytes_to_clear = self.page_size
       for k,v in self.keys.iteritems():
          data = struct.pack(key_fmt, k, v)

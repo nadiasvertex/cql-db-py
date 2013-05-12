@@ -53,6 +53,15 @@ class TestKeyPage(unittest.TestCase):
          kp = datafile.KeyPage(f, 8192)
          kp.set(100, 500)
          self.assertEqual(kp.get(100), 500)
+
+   def test_can_delete(self):
+      from key_store import datafile
+      
+      with open(self.filename, "w+b") as f:
+         kp = datafile.KeyPage(f, 8192)
+         kp.set(100, 500)
+         kp.delete(100)
+         self.assertEqual(kp.get(100), None)
       
    def test_can_flush(self):
       from key_store import datafile
