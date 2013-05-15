@@ -31,6 +31,37 @@ class TestFreePage(unittest.TestCase):
       s = varint.encode(-900)
       self.assertEqual(varint.decode(s), -900)
 
+   def test_can_stream_encode(self):
+      from util import varint
+      from cStringIO import StringIO
+      st = StringIO()
+      varint.encode_stream(900, st)
+
+   def test_can_stream_decode(self):
+      from util import varint
+      from cStringIO import StringIO
+      st = StringIO()
+      varint.encode_stream(900, st)
+      st.seek(0)
+      _ = varint.decode_stream(st)
+
+   def test_can_roundtrip_positive_int_stream(self):
+      from util import varint
+      from cStringIO import StringIO
+      st = StringIO()
+      varint.encode_stream(900, st)
+      st.seek(0)
+      self.assertEqual(varint.decode_stream(st), 900)
+
+   def test_can_roundtrip_negative_int_stream(self):
+      from util import varint
+      from cStringIO import StringIO
+      st = StringIO()
+      varint.encode_stream(-900, st)
+      st.seek(0)
+      self.assertEqual(varint.decode_stream(st), -900)
+
+
 
 def get_suite():
    "Return a unittest.TestSuite."
