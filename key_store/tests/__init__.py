@@ -118,6 +118,40 @@ class TestFreePage(unittest.TestCase):
       with open(self.filename, "w+b") as f:
          _ = datafile.FreePage(f, 8192)
 
+   def test_can_release(self):
+      from key_store import datafile
+      with open(self.filename, "w+b") as f:
+         fp = datafile.FreePage(f, 8192)
+         self.assertTrue(fp.release(datafile.Extent(100, 500)), "release should succeed")
+
+   def test_can_allocate(self):
+      from key_store import datafile
+      with open(self.filename, "w+b") as f:
+         fp = datafile.FreePage(f, 8192)
+         fp.release(datafile.Extent(100, 500))
+         start = fp.acquire(50)
+         self.assertEqual(start, 100)
+         start = fp.acquire(50)
+         self.assertEqual(start, 150)
+         self.assertTrue(fp.release(datafile.Extent(100, 149)))
+         start = fp.acquire(50)
+         self.assertEqual(start, 100)
+
+   def test_allocation_persists(self):
+      from key_store import datafile
+      with open(self.filename, "w+b") as f:
+         fp = datafile.FreePage(f, 8192)
+         fp.release(datafile.Extent(100, 500))
+         fp.flush(f)
+
+      with open(self.filename, "r+b") as f:
+         fp = datafile.FreePage(f, 8192)
+         start = fp.acquire(50)
+         self.assertEqual(start, 100)
+
+
+
+
 def get_suite():
    "Return a unittest.TestSuite."
    import key_store.tests

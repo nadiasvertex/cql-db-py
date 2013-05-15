@@ -344,12 +344,13 @@ class DataFile(object):
    can be paged out of memory one flushed to disk, which means that we don't have to take up a lot of
    RAM in order to store a lot of data.
    """
-   __slots__ = [ "file_size_limit", "page_size", "mask", "cache", "d", "l", "a" ]
+   __slots__ = [ "file_size_limit", "page_size", "mask", "cache", "d", "l", "a", "e" ]
    def __init__(self, filename, page_size=8192, file_size_limit=100 * 1024 * 1024):
       self.page_size = page_size
       self.file_size_limit = file_size_limit
       self.cache = {}
       self.a = array.array("L")
+      self.e = None
 
       if not os.path.exists(filename):
          self.d = open(filename, "w+b")
@@ -372,6 +373,30 @@ class DataFile(object):
       m.update(header)
       return (m.digest(), header)
 
+   def _load_index_pages(self):
+      """
+      :synopsis: Loads the index pages.
+      """
+      for v in self.a:
+         self.d.seek(self.page_size * v)
+         self.cache[v] = KeyPage(self.d, self.page_size)
+
+   def _flush_index_pages(self):
+      """
+      :synopsis: Writes the dirty index pages.
+      """
+      for k, v in self.cache:
+         if v.dirty:
+            self.d.seek(self.page_size * k)
+            v.flush()
+
+   def _flush_extents_page(self):
+      """
+      :synopsis: Writes the extents page.
+      """
+      self.d.seek(self.page_size * 1)
+      self.e.flush(self.d)
+
    def _create(self):
       """
       :synopsis: Initializes the database file with a default directory.
@@ -384,6 +409,8 @@ class DataFile(object):
       self.d.write(signature)
       self.d.write(header)
       self.d.flush()
+
+      self._load_index_pages()
 
    def _load(self):
       """
@@ -398,9 +425,22 @@ class DataFile(object):
       if check != signature:
          raise IntegrityError()
 
+      self._load_index_pages()
+
+   def checkpoint(self):
+      """
+      :synopsis: Flushes all dirty pages to disk.
+      """
+      self._flush_index_pages()
+
    def set(self, key, value):
+      """
+      :synopsis: Stores the value with the corresponding key.
+      """
       index = key & self.mask
       page = self.a[index]
+      kp = self.cache[page]
+
 
 
 
