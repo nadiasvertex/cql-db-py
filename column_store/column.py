@@ -71,24 +71,20 @@ class Column(object):
       max_index = self.store_map.count() - 1
 
       while True:
-         center = ((max_index - min_index) / 2) + min_index
+         # We have gone all the way down, the row must not exist.
+         if max_index < min_index:
+            return None
+
+         center = (max_index + min_index) / 2
 
          range_result, value_idx = self._cmp_row_with_range(row_id, center)
          if range_result == 0:
             return self._get_value_at_index(value_idx)
 
-         # We have gone all the way down, the row must not exist.
-         if max_index == min_index:
-            return None
-
-         if max_index - min_index == 1:
-            min_index = max_index
-            continue
-
          if range_result == -1:
-            max_index = center
+            max_index = center - 1
          else:
-            min_index = center
+            min_index = center + 1
 
    def get(self, row_id):
       if self.store.is_row_ordered():
