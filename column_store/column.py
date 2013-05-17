@@ -1,11 +1,6 @@
-import os
-import struct
-import zlib
-
-from util import varint
 from map import Map
 from value_store import ValueStore
-
+from rle import RleColumnStore
 
 
 class Column(object):
@@ -43,24 +38,58 @@ class Column(object):
       self.previous_value = value
       self.previous_value_offset = s_offset
 
-   def get(self, row_id):
-      # Note: We may be able to early-out of this loop if we make the assumption
-      # that this store is ordered by row_id. That's not a valid assumption for
-      # some column stores, so there needs to be a mechanism to encode that
-      # information.
+   def _get_tuple_at_index(self, index):
+      s_offset = self.store_map.get(index)
+      return self.store.get(s_offset)
 
-      # Note: We may be able to do a binary search of this ordered array, again
-      # assuming that it is ordered by row_id.
+   def _get_value_at_index(self, index):
+      v_offset = self.value_map.get(index)
+      return self.values.get(v_offset)
 
+   def _cmp_row_with_range(self, row_id, index):
+      value_idx, start_row_id, row_count = self._get_tuple_at_index(index)
+      if row_id < start_row_id:
+         return -1, value_idx
+
+      if row_id > start_row_id + row_count:
+         return 1, value_idx
+
+      return  0, value_idx
+
+   def _get_linear_search(self, row_id):
       for i in range(0, self.store_map.count()):
-         s_offset = self.store_map.get(i)
-         value_idx, start_row_id, row_count = self.store.get(s_offset)
-         if row_id >= start_row_id and row_id <= start_row_id + row_count:
-            v_offset = self.value_map.get(value_idx)
-            return self.values.get(v_offset)
+         range_result, value_idx = self._cmp_row_with_range(row_id, i)
+         if range_result == 0:
+            return self._get_value_at_index(value_idx)
 
-      # At this point we have found that there is no value for the specified row_id.
+      # At this point we have found that there is no value for the specified
+      # row_id.
       return None
+
+   def _get_binary_search(self, row_id):
+      min_index = 0
+      max_index = self.store_map.count() - 1
+
+      while True:
+         center = ((max_index - min_index) / 2) + min_index
+         range_result, value_idx = self._cmp_row_with_range(row_id, center)
+         if range_result == 0:
+            return self._get_value_at_index(value_idx)
+
+         # We have gone all the way down, the row must not exist.
+         if max_index == min_index:
+            return None
+
+         if range_result == -1:
+            max_index = center
+         else:
+            min_index = center
+
+   def get(self, row_id):
+      if self.store.is_row_ordered():
+         return self._get_binary_search(row_id)
+
+      return self._get_linear_search(row_id)
 
    def flush(self):
       self.store_map.flush()
