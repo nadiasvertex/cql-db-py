@@ -60,11 +60,32 @@ class TestColumn(unittest.TestCase):
             row_id += 1
 
 
+class TestBtree(unittest.TestCase):
+   filename = "test"
+   def setUp(self):
+      if os.path.exists(self.filename + ".idx"):
+         os.unlink(self.filename + ".idx")
 
+   def test_can_create(self):
+      from column_store.btree import BPlusTree
+      b = BPlusTree(self.filename)
 
+   def test_can_insert(self):
+      from column_store.btree import BPlusTree
+      b = BPlusTree(self.filename)
+      b.insert(1, 100)
 
+   def test_can_find(self):
+      from column_store.btree import BPlusTree
+      b = BPlusTree(self.filename)
+      b.insert(1, 100)
+      self.assertEqual(b.find(1), 100)
 
-
+   def test_can_insert_many(self):
+      from column_store.btree import BPlusTree
+      b = BPlusTree(self.filename)
+      for i in range(1, 10000):
+         b.insert(i, i + 100)
 
 def get_suite():
    "Return a unittest.TestSuite."

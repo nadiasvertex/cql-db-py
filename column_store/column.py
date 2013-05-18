@@ -98,6 +98,3 @@ class Column(object):
       self.value_map.flush()
       self.values.flush()
 
-
-
-
