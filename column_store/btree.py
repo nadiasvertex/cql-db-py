@@ -25,6 +25,13 @@ class Page(object):
       self.dirty = False
       self.page_type, self.count, self.last_pointer = self._get_header()
 
+   def dump(self):
+      print "page at", self.offset, "(dirty)" if self.dirty else ""
+      print "entries: ", self.count
+      print "last pointer: ", self.last_pointer
+      for i in range(0, self.count):
+         print i, ":", str(self.get_entry(i))
+
    def _get_header(self):
       return struct.unpack_from(self.page_header_fmt, self.data)
 
@@ -40,25 +47,27 @@ class Page(object):
    def put_entry(self, index, key, pointer_or_value):
       self.dirty = True
       offset = self.page_header_fmt_size + (self.entry_fmt_size * index)
-      print index, offset, len(self.data)
+      print "write entry: ", index, offset, len(self.data)
       struct.pack_into(self.entry_fmt, self.data, offset, key, pointer_or_value)
 
    def append_entry(self, key, pointer_or_value):
       self.dirty = True
-      self.put_entry(self.data, self.count, key, pointer_or_value)
+      self.put_entry(self.count, key, pointer_or_value)
       self.count += 1
 
    def upsert_entry(self, new_key, new_offset, existing_offset):
       self.dirty = True
       for i in range(0, self.count):
-            current_key, current_pointer = self._get_entry(self.data, i)
+            current_key, current_pointer = self.get_entry(i)
             if new_key < current_key:
+               print "move ", current_key, "->", new_offset
+               print "insert ", new_key, "->", current_pointer
                assert(existing_offset == current_pointer)
+
                # Update the current entry with the new offset.
-               self._put_entry(self.data, i, current_key, new_offset)
+               self.put_entry(i, current_key, new_offset)
                # Insert a new entry with the old offset
-               self._insert_entry_before(self.data, i,
-                                         new_key, current_pointer)
+               self.insert_entry_before(i, new_key, current_pointer)
                self.count += 1
                return
 
@@ -66,7 +75,7 @@ class Page(object):
       # will take the current last pointer and assign it to the new key. Then
       # assign the new page to the last pointer.
       assert(existing_offset == self.last_pointer)
-      self.append_entry(self.data, new_key, self.last_pointer)
+      self.append_entry(new_key, self.last_pointer)
       self.last_pointer = new_offset
 
    def _insert_entry_before(self, index, key, value):
@@ -153,8 +162,10 @@ class BPlusTree(object):
       """
       # Find the middle entry
       page_to_split = path[-1]
-      middle_index = self.b / 2
+      page_to_split.dump()
+      middle_index = page_to_split.count / 2
       middle_entry = page_to_split.get_entry(middle_index)
+      print "splitting at: ", middle_index, str(middle_entry)
 
       # Move the middle entry and everything to the right of it into a new
       # page.
@@ -163,8 +174,9 @@ class BPlusTree(object):
       new_page.count = self.b - middle_index
       new_i = 0
       for i in range(middle_index, self.b):
-         key, value = page_to_split._get_entry(i)
+         key, value = page_to_split.get_entry(i)
          new_page.put_entry(new_i, key, value)
+         new_i += 1
 
       # Update the previous page to point to the new page, and to have fewer
       # items in its inventory
@@ -190,8 +202,10 @@ class BPlusTree(object):
          # We have a parent, insert a new key into it to point to the existing
          # page, and update the existing key to point to the new page.
          parent_page = path[-2]
-         parent_page._upsert_entry(middle_entry[0],
-                                   new_page.offset, page_to_split.offset)
+         parent_page.upsert_entry(middle_entry[1],
+                                  new_page.offset, page_to_split.offset)
+
+      return middle_entry, new_page, page_to_split
 
    def insert(self, key, value):
       offset = self.root_page
@@ -201,7 +215,7 @@ class BPlusTree(object):
 
       while True:
          page = self._get_page(offset)
-         print str(offset) + ":", page.page_type, page.count, page.last_pointer
+         print "page at", str(offset) + ":", page.page_type, page.count, page.last_pointer
 
          # Save the current page and offset in a path stack, since
          # it may be needed to perform splitting.
@@ -212,7 +226,7 @@ class BPlusTree(object):
                self._split_node(path)
 
             for i in range(0, page.count):
-               current_key, pointer = page._get_entry(i)
+               current_key, pointer = page.get_entry(i)
                if key < current_key:
                   offset = pointer
                   break
@@ -230,7 +244,12 @@ class BPlusTree(object):
                return
 
             if page.count >= self.b:
-               self._split_leaf(path)
+               # Split the page, then figure out which new page to use
+               middle_entry, new_page, old_page = self._split_leaf(path)
+               if key < middle_entry[1]:
+                  page = new_page
+               else:
+                  page = old_page
 
             for i in range(0, page.count):
                current_key, _ = page.get_entry(i)

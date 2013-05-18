@@ -84,7 +84,7 @@ class TestBtree(unittest.TestCase):
    def test_can_insert_many(self):
       from column_store.btree import BPlusTree
       b = BPlusTree(self.filename)
-      for i in range(1, 10000):
+      for i in range(1, 1000):
          b.insert(i, i + 100)
 
 def get_suite():
