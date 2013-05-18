@@ -189,7 +189,7 @@ class BPlusTree(object):
       # page_to_split.dump()
       middle_index = page_to_split.count / 2
       middle_entry_key, _ = page_to_split.get_entry(middle_index)
-      print "splitting at: ", middle_index, str(middle_entry_key)
+      # print "splitting at: ", middle_index, str(middle_entry_key)
 
       # Move the middle entry and everything to the right of it into a new
       # page.
@@ -219,10 +219,10 @@ class BPlusTree(object):
          self._put_page(new_root)
          self._set_root(new_root_offset)
 
-         print "create new root"
-         new_root.dump()
-         page_to_split.dump()
-         new_page.dump()
+         # print "create new root"
+         # new_root.dump()
+         # page_to_split.dump()
+         # new_page.dump()
       else:
          # We have a parent, insert a new key into it to point to the existing
          # page, and update the existing key to point to the new page.
@@ -230,10 +230,10 @@ class BPlusTree(object):
          parent_page.upsert_entry(middle_entry_key,
                                   new_page.offset, page_to_split.offset)
          self._put_page(parent_page)
-         print "split leaf"
-         parent_page.dump()
-         page_to_split.dump()
-         new_page.dump()
+         # print "split leaf"
+         # parent_page.dump()
+         # page_to_split.dump()
+         # new_page.dump()
 
       return middle_entry_key, new_page, page_to_split
 
@@ -281,7 +281,7 @@ class BPlusTree(object):
                else:
                   page = new_page
 
-               print "post split on", middle_entry_key, " with ", key, "chooses", page.offset
+               # print "post split on", middle_entry_key, " with ", key, "chooses", page.offset
                path[-1] = page
 
             for i in range(0, page.count):
@@ -299,7 +299,7 @@ class BPlusTree(object):
    def find(self, key):
       offset = self.root_page
 
-      print "find:", key
+      # print "find:", key
 
       while True:
          page = self._get_page(offset)
