@@ -87,6 +87,15 @@ class TestBtree(unittest.TestCase):
       for i in range(1, 1000):
          b.insert(i, i + 100)
 
+   def test_can_find_many(self):
+      from column_store.btree import BPlusTree
+      b = BPlusTree(self.filename)
+      for i in range(1, 1000):
+         b.insert(i, i + 100)
+
+      for i in range(1, 1000):
+         self.assertEqual(b.find(i), i + 100, "should find key %d = %d" % (i, i + 100))
+
 def get_suite():
    "Return a unittest.TestSuite."
    import column_store.tests

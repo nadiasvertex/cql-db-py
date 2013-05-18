@@ -26,7 +26,9 @@ class Page(object):
       self.page_type, self.count, self.last_pointer = self._get_header()
 
    def dump(self):
-      print "page at", self.offset, "(dirty)" if self.dirty else ""
+      print "page at", self.offset, \
+            "(node)" if self.page_type == Page.PAGE_TYPE_NODE else "(leaf)", \
+            "(dirty)" if self.dirty else ""
       print "entries: ", self.count
       print "last pointer: ", self.last_pointer
       for i in range(0, self.count):
@@ -47,7 +49,7 @@ class Page(object):
    def put_entry(self, index, key, pointer_or_value):
       self.dirty = True
       offset = self.page_header_fmt_size + (self.entry_fmt_size * index)
-      print "write entry: ", index, offset, len(self.data)
+      # print "write entry: ", index, offset, len(self.data)
       struct.pack_into(self.entry_fmt, self.data, offset, key, pointer_or_value)
 
    def append_entry(self, key, pointer_or_value):
@@ -60,8 +62,8 @@ class Page(object):
       for i in range(0, self.count):
             current_key, current_pointer = self.get_entry(i)
             if new_key < current_key:
-               print "move ", current_key, "->", new_offset
-               print "insert ", new_key, "->", current_pointer
+               # print "move ", current_key, "->", new_offset
+               # print "insert ", new_key, "->", current_pointer
                assert(existing_offset == current_pointer)
 
                # Update the current entry with the new offset.
@@ -78,13 +80,19 @@ class Page(object):
       self.append_entry(new_key, self.last_pointer)
       self.last_pointer = new_offset
 
-   def _insert_entry_before(self, index, key, value):
+   def insert_entry_before(self, index, key, value):
       start_offset = self.page_header_fmt_size + (self.entry_fmt_size * index)
       end_offset = self.page_header_fmt_size + (self.entry_fmt_size * (index + 1))
-      el_move_count = self.count - index
-      self.data[start_offset:start_offset + el_move_count] = self.data[end_offset:end_offset + el_move_count]
+      el_move_count = (self.count - index) * self.entry_fmt_size
+      self.data[end_offset:end_offset + el_move_count] = self.data[start_offset:start_offset + el_move_count]
       self.put_entry(index, key, value)
       self.count += 1
+
+   def copy_entries_to(self, target_page, from_index, to_index, count):
+      from_offset = self.page_header_fmt_size + (self.entry_fmt_size * from_index)
+      to_offset = self.page_header_fmt_size + (self.entry_fmt_size * to_index)
+      move_count = count * self.entry_fmt_size
+      target_page.data[to_offset:to_offset + move_count] = self.data[from_offset:from_offset + move_count]
 
    def flush(self):
       self._put_header()
@@ -125,9 +133,25 @@ class BPlusTree(object):
 
    def _split_leaf(self, path):
       """
-      :synopsis: Split this leaf into two leaves. If there is no parent, then
-      this leaf is the root. Create a new parent. Take the middle key and
-      insert it into the parent. This leaf becomes the pointer.
+      :synopsis: Split this leaf into two leaves.
+
+      1. If there is no parent, then this leaf is the root.
+         a. Create a new parent.
+         b. Take the middle key and insert it into the parent. This leaf becomes
+          the pointer.
+         c. Create a new leaf, move all nodes from middle key to end into it.
+         d. The new leaf becomes the parent's last_pointer
+      2. If there is a parent things are more complex.
+         a. Create a new leaf, move all nodes from middle key to end into it.
+         b. Take the middle key.
+         c. Look in the parent and find the spot where the middle key should go.
+            i. Fetch the pointer of the key that currently occupies this spot.
+            ii. Set the pointer to be the pointer of the new leaf page.
+            iii. Insert the new key in it's spot.
+            iv. Set the pointer to be the pointer you fetched in (i).
+         d. If the spot is at the end, perform steps (i) - (iv) from (c), except
+            that you use the last_pointer element from the page header as the
+            pointer fetched in (i). (Also update it with the new page offset.)
 
       (1,2,3,4,5)
 
@@ -162,21 +186,17 @@ class BPlusTree(object):
       """
       # Find the middle entry
       page_to_split = path[-1]
-      page_to_split.dump()
+      # page_to_split.dump()
       middle_index = page_to_split.count / 2
-      middle_entry = page_to_split.get_entry(middle_index)
-      print "splitting at: ", middle_index, str(middle_entry)
+      middle_entry_key, _ = page_to_split.get_entry(middle_index)
+      print "splitting at: ", middle_index, str(middle_entry_key)
 
       # Move the middle entry and everything to the right of it into a new
       # page.
       new_page = self._get_page(self._allocate_page())
       new_page.page_type = Page.PAGE_TYPE_LEAF
-      new_page.count = self.b - middle_index
-      new_i = 0
-      for i in range(middle_index, self.b):
-         key, value = page_to_split.get_entry(i)
-         new_page.put_entry(new_i, key, value)
-         new_i += 1
+      new_page.count = (page_to_split.count - middle_index)
+      page_to_split.copy_entries_to(new_page, middle_index, 0, new_page.count)
 
       # Update the previous page to point to the new page, and to have fewer
       # items in its inventory
@@ -193,29 +213,39 @@ class BPlusTree(object):
          new_root_offset = self._allocate_page()
          new_root = self._get_page(new_root_offset)
          new_root.page_type = Page.PAGE_TYPE_NODE
-         new_root.count = 2
+         new_root.count = 1
          new_root.last_pointer = new_page.offset
-         new_root.put_entry(0, *middle_entry)
+         new_root.put_entry(0, middle_entry_key, page_to_split.offset)
          self._put_page(new_root)
          self._set_root(new_root_offset)
+
+         print "create new root"
+         new_root.dump()
+         page_to_split.dump()
+         new_page.dump()
       else:
          # We have a parent, insert a new key into it to point to the existing
          # page, and update the existing key to point to the new page.
          parent_page = path[-2]
-         parent_page.upsert_entry(middle_entry[1],
+         parent_page.upsert_entry(middle_entry_key,
                                   new_page.offset, page_to_split.offset)
+         self._put_page(parent_page)
+         print "split leaf"
+         parent_page.dump()
+         page_to_split.dump()
+         new_page.dump()
 
-      return middle_entry, new_page, page_to_split
+      return middle_entry_key, new_page, page_to_split
 
    def insert(self, key, value):
       offset = self.root_page
       path = []
 
-      print "insert", key, value
+      # print "insert", key, value
 
       while True:
          page = self._get_page(offset)
-         print "page at", str(offset) + ":", page.page_type, page.count, page.last_pointer
+         # page.dump()
 
          # Save the current page and offset in a path stack, since
          # it may be needed to perform splitting.
@@ -239,17 +269,20 @@ class BPlusTree(object):
             if page.count == 0:
                # This must be the root page of a new index.
                page.put_entry(0, key, value)
-               page.count += 1
+               page.count = 1
                self._put_page(page)
                return
 
             if page.count >= self.b:
                # Split the page, then figure out which new page to use
-               middle_entry, new_page, old_page = self._split_leaf(path)
-               if key < middle_entry[1]:
-                  page = new_page
-               else:
+               middle_entry_key, new_page, old_page = self._split_leaf(path)
+               if key < middle_entry_key:
                   page = old_page
+               else:
+                  page = new_page
+
+               print "post split on", middle_entry_key, " with ", key, "chooses", page.offset
+               path[-1] = page
 
             for i in range(0, page.count):
                current_key, _ = page.get_entry(i)
@@ -266,8 +299,11 @@ class BPlusTree(object):
    def find(self, key):
       offset = self.root_page
 
+      print "find:", key
+
       while True:
          page = self._get_page(offset)
+         # page.dump()
 
          if page.page_type == Page.PAGE_TYPE_NODE:
             for i in range(0, page.count):
