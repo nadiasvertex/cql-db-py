@@ -42,6 +42,99 @@ class Page(object):
       struct.pack_into(self.page_header_fmt, self.data, 0,
                        self.page_type, self.count, self.last_pointer)
 
+   def find_entry(self, key):
+      min_index = 0
+      max_index = self.count - 1
+
+      while True:
+         # We have gone all the way down, the row must not exist.
+         if max_index < min_index:
+            return None
+
+         center = (max_index + min_index) / 2
+
+         current_key, current_value = self.get_entry(center)
+         if current_key == key:
+            return (center, current_key, current_value)
+
+         if current_key > key:
+            max_index = center - 1
+         else:
+            min_index = center + 1
+
+   def find_nearest_entry(self, key):
+      """
+      :synopsis: This is a binary search, but instead of looking for the
+      exact key, it looks for the smallest key larger than 'key'.
+
+      This function is useful for figuring out which node key to follow, and
+      for finding insertion points in node and leaf pages.
+
+      [1, 2, 4, 5, 9, 10] <- (4>3)
+       m     c         M
+
+      [1, 2, 4, 5, 9, 10] <- (2<3)
+       m  c  M
+
+      [1, 2, 4, 5, 9, 10] <- (2<3)
+          m  M
+          c
+
+      [1, 2, 4, 5, 9, 10] <- (4>3)
+             M
+             m
+             c
+
+      [1, 2, 4, 5, 9, 10] <- (end)
+          M  m
+
+
+      ---------------------------------
+
+      [1, 2, 4, 5, 9, 10] <- (4<8)
+       m     c         M
+
+      [1, 2, 4, 5, 9, 10] <- (5<8)
+             m  c      M
+
+      [1, 2, 4, 5, 9, 10] <- (9>8)
+                m  c   M
+
+      [1, 2, 4, 5, 9, 10] <- (5<8)
+                m  M
+                c
+
+      [1, 2, 4, 5, 9, 10] <- (5<8)
+                   m
+                   M
+                   c
+
+      [1, 2, 4, 5, 9, 10] <- (9>8)
+                M  m
+                   c
+
+
+      """
+      min_index = 0
+      max_index = self.count - 1
+
+      while True:
+         # We have gone all the way down, the row must not exist.
+         if max_index < min_index:
+            return None
+
+         center = (max_index + min_index) / 2
+
+         current_key, current_value = self.get_entry(center)
+         if current_key == key:
+            return (center, current_key, current_value)
+
+         if current_key > key:
+            max_index = center - 1
+         else:
+            min_index = center + 1
+
+
    def get_entry(self, index):
       offset = self.page_header_fmt_size + (self.entry_fmt_size * index)
       return struct.unpack_from(self.entry_fmt, self.data, offset)
@@ -317,12 +410,11 @@ class BPlusTree(object):
 
             continue
          else:
-            for i in range(0, page.count):
-               current_key, value = page.get_entry(i)
-               if current_key == key:
-                  return value
+            results = page.find_entry(key)
+            if results == None:
+               return None
 
-            return None
+            return results[2]
 
    def flush(self):
       self.f.flush()

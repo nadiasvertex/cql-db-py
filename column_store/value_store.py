@@ -5,6 +5,8 @@ Created on May 16, 2013
 '''
 
 import os
+import struct
+import zlib
 
 from util import varint
 
@@ -31,25 +33,73 @@ class ValueStore(object):
    very space efficient way, assuming that the numbers are mostly smaller than 8 bytes.
    """
 
-   header_fmt = "<"
+   header_fmt = "<bb"
 
-   __slots__ = ["filename", "f"]
+   DATA_MODE_PACKED = 1
+   DATA_MODE_COMPRESSED = 2
+   DATA_MODE_USER = 3
+   DATA_MODE_USER_COMPRESSED = 4
+   DATA_MODE_PACKED_INT = 5
 
-   def __init__(self, base_name):
+   __slots__ = ["filename", "f", "mode", "compression_level"]
+
+   def __init__(self, base_name, mode=1, compression_level=zlib.Z_BEST_SPEED):
       self.filename = base_name + ".values"
-      self.f = self.f = open(self.filename, "r+b") if os.path.exists(self.filename) else open(self.filename, "w+b")
+      self.f = self._load_existing() if os.path.exists(self.filename) else self._initialize(mode, compression_level)
+
+   def _load_existing(self):
+      f = open(self.filename, "r+b")
+      self.mode, self.compression_level = struct.unpack(self.header_fmt,
+                                              f.read(struct.calcsize(self.header_fmt)))
+      return f
+
+   def _initialize(self, mode, compression_level):
+      f = open(self.filename, "w+b")
+      self.mode = mode
+      self.compression_level = compression_level
+      f.write(struct.pack(self.header_fmt, mode, compression_level))
+      f.flush()
+      return f
 
    def append(self, value):
       self.f.seek(0, 2)
       offset = self.f.tell()
-      varint.encode_stream(len(value), self.f)
+
+      # Write the packed integer format
+      if self.mode == self.DATA_MODE_PACKED_INT:
+         varint.encode_stream(value, self.f)
+         return offset
+
+      # Compress the data before measuring it.
+      if self.mode in (self.DATA_MODE_COMPRESSED, self.DATA_MODE_USER_COMPRESSED):
+         value = zlib.compress(value, self.compression_level)
+
+      # Measure the length
+      if self.mode in (self.DATA_MODE_COMPRESSED, self.DATA_MODE_PACKED, \
+                       self.DATA_MODE_USER_COMPRESSED):
+         varint.encode_stream(len(value), self.f)
+
+      # Write the value
       self.f.write(value)
       return offset
 
-   def get(self, offset):
+   def get(self, offset, size=0):
       self.f.seek(offset)
-      size = varint.decode_stream(self.f)
-      return self.f.read(size)
+
+      # Read the packed integer format
+      if self.mode == self.DATA_MODE_PACKED_INT:
+         return varint.decode_stream(self.f)
+
+      # Read the varint size of the data
+      if self.mode in (self.DATA_MODE_COMPRESSED, self.DATA_MODE_PACKED, \
+                       self.DATA_MODE_USER_COMPRESSED):
+         size = varint.decode_stream(self.f)
+
+      value = self.f.read(size)
+      if self.mode in (self.DATA_MODE_COMPRESSED, self.DATA_MODE_USER_COMPRESSED):
+         return zlib.decompress(value)
+
+      return value
 
    def flush(self):
       self.f.flush()
