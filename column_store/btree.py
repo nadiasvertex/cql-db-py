@@ -533,7 +533,11 @@ class BPlusTree(object):
 
          if page.page_type == Page.PAGE_TYPE_NODE:
             if page.count >= self.b:
-               self._split_node(path)
+               middle_entry_key, new_page, old_page = self._split_node(path)
+               if key < middle_entry_key:
+                  page = old_page
+               else:
+                  page = new_page
 
             for i in range(0, page.count):
                current_key, pointer = page.get_entry(i)
@@ -578,15 +582,18 @@ class BPlusTree(object):
 
    def find(self, key):
       offset = self.root_page
-
-      # print "find:", key
+      path = []
+      print "find:", key
 
       while True:
          if offset == 0:
             return None
 
          page = self._get_page(offset)
-         # page.dump()
+
+         path.append(page)
+         print "path:", "->".join([str(p.offset) for p in path])
+         page.dump()
 
          if page.page_type == Page.PAGE_TYPE_NODE:
             for i in range(0, page.count):
