@@ -199,9 +199,9 @@ class BPlusTree(object):
    free_map_entry_fmt = "<B"
    free_map_entry_fmt_size = struct.calcsize(free_map_entry_fmt)
 
-   def __init__(self, base_name):
-      self.page_size = 8192
-      self.root_page = 0
+   def __init__(self, base_name, page_size=8192):
+      self.page_size = page_size
+      self.root_page = 2
       self.filename = base_name + ".idx"
       self.b = (self.page_size - Page.page_header_fmt_size) / Page.entry_fmt_size
       if os.path.exists(self.filename):
@@ -215,19 +215,19 @@ class BPlusTree(object):
       self.free_cache = self._cache_freemap()
 
    def _create_freemap(self):
-      m = memoryview(bytearray(self.page_size))
+      m = bytearray(self.page_size)
       # Write the header, plus the references to the header and free map block
       struct.pack_into(self.free_map_header_fmt + "BB", m, 0, 0, 1, 1)
       return m
 
    def _load_freemap(self):
       self.f.seek(self.page_size, 0)
-      return memoryview(self.f.read(self.page_size))
+      return bytearray(self.f.read(self.page_size))
 
    def _cache_freemap(self):
       cache = []
       for i in range(self.free_map_header_fmt_size, len(self.free_map)):
-         b = ord(self.free_map[i])
+         b = self.free_map[i]
          if b == 0:
             cache.append(i)
       return cache
@@ -237,7 +237,7 @@ class BPlusTree(object):
 
    def _allocate_page(self):
       i = self.free_cache.pop()
-      self.free_map[i] = chr(1)
+      self.free_map[i] = 1
       return i * self.page_size
 
    def _get_page(self, offset):
@@ -245,15 +245,80 @@ class BPlusTree(object):
       data = bytearray(self.f.read(self.page_size))
       if len(data) == 0:
          data = bytearray(self.page_size)
-      return Page(memoryview(data), offset)
+      return Page(data, offset)
 
    def _put_page(self, page):
       page.flush()
       self.f.seek(page.offset)
       self.f.write(page.data)
 
+   def _split_page(self, path, page_type):
+      """
+      :synopsis: Splits a page into two pages and promotes the middle key into
+      the parent. If no parent exists, a new parent is created.
+      """
+      # Find the middle entry
+      page_to_split = path[-1]
+      # page_to_split.dump()
+      middle_index = page_to_split.count / 2
+      middle_entry_key, _ = page_to_split.get_entry(middle_index)
+      # print "splitting at: ", middle_index, str(middle_entry_key)
+
+      # Move the middle entry and everything to the right of it into a new
+      # page.
+      new_page = self._get_page(self._allocate_page())
+      new_page.page_type = page_type
+      new_page.count = (page_to_split.count - middle_index)
+      page_to_split.copy_entries_to(new_page, middle_index, 0, new_page.count)
+
+      # Update the previous page to point to the new page, and to have fewer
+      # items in its inventory
+      page_to_split.page_type = page_type
+      page_to_split.count = middle_index
+      page_to_split.last_pointer = new_page.offset
+
+      self._put_page(new_page)
+      self._put_page(page_to_split)
+
+      # Insert a new key in the parent
+      if len(path) == 1:
+         # We are the root, make a new one
+         new_root_offset = self._allocate_page()
+         new_root = self._get_page(new_root_offset)
+         new_root.page_type = Page.PAGE_TYPE_NODE
+         new_root.count = 1
+         new_root.last_pointer = new_page.offset
+         new_root.put_entry(0, middle_entry_key, page_to_split.offset)
+         self._put_page(new_root)
+         self._set_root(new_root_offset)
+
+         # print "create new root"
+         # new_root.dump()
+         # page_to_split.dump()
+         # new_page.dump()
+      else:
+         # We have a parent, insert a new key into it to point to the existing
+         # page, and update the existing key to point to the new page.
+         parent_page = path[-2]
+         parent_page.upsert_entry(middle_entry_key,
+                                  new_page.offset, page_to_split.offset)
+         self._put_page(parent_page)
+         # print "split leaf"
+         # parent_page.dump()
+         # page_to_split.dump()
+         # new_page.dump()
+
+      return middle_entry_key, new_page, page_to_split
+
+
    def _split_node(self, path):
-      raise "not implemented"
+      """
+      :synopsis: Split this node into two nodes.
+
+      We may not have a parent, but we are guaranteed to have children. This is
+      always an inner btree node, and not a leaf.
+      """
+      return self._split_page(path, Page.PAGE_TYPE_NODE)
 
    def _split_leaf(self, path):
       """
@@ -308,58 +373,7 @@ class BPlusTree(object):
       (-2,-1) (0,1) (2,2.1,2.2)  (3,4)  (5,6,7)
 
       """
-      # Find the middle entry
-      page_to_split = path[-1]
-      # page_to_split.dump()
-      middle_index = page_to_split.count / 2
-      middle_entry_key, _ = page_to_split.get_entry(middle_index)
-      # print "splitting at: ", middle_index, str(middle_entry_key)
-
-      # Move the middle entry and everything to the right of it into a new
-      # page.
-      new_page = self._get_page(self._allocate_page())
-      new_page.page_type = Page.PAGE_TYPE_LEAF
-      new_page.count = (page_to_split.count - middle_index)
-      page_to_split.copy_entries_to(new_page, middle_index, 0, new_page.count)
-
-      # Update the previous page to point to the new page, and to have fewer
-      # items in its inventory
-      page_to_split.page_type = Page.PAGE_TYPE_LEAF
-      page_to_split.count = middle_index
-      page_to_split.last_pointer = new_page.offset
-
-      self._put_page(new_page)
-      self._put_page(page_to_split)
-
-      # Insert a new key in the parent
-      if len(path) == 1:
-         # We are the root, make a new one
-         new_root_offset = self._allocate_page()
-         new_root = self._get_page(new_root_offset)
-         new_root.page_type = Page.PAGE_TYPE_NODE
-         new_root.count = 1
-         new_root.last_pointer = new_page.offset
-         new_root.put_entry(0, middle_entry_key, page_to_split.offset)
-         self._put_page(new_root)
-         self._set_root(new_root_offset)
-
-         # print "create new root"
-         # new_root.dump()
-         # page_to_split.dump()
-         # new_page.dump()
-      else:
-         # We have a parent, insert a new key into it to point to the existing
-         # page, and update the existing key to point to the new page.
-         parent_page = path[-2]
-         parent_page.upsert_entry(middle_entry_key,
-                                  new_page.offset, page_to_split.offset)
-         self._put_page(parent_page)
-         # print "split leaf"
-         # parent_page.dump()
-         # page_to_split.dump()
-         # new_page.dump()
-
-      return middle_entry_key, new_page, page_to_split
+      return self._split_page(path, Page.PAGE_TYPE_LEAF)
 
    def insert(self, key, value):
       offset = self.root_page
