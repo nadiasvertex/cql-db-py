@@ -191,6 +191,13 @@ class Page(object):
       self._put_header()
 
 class BPlusTree(object):
+   # next free map page
+   free_map_header_fmt = "<Q"
+   free_map_header_fmt_size = struct.calcsize(free_map_header_fmt)
+
+   # free map (one byte per page)
+   free_map_entry_fmt = "<B"
+   free_map_entry_fmt_size = struct.calcsize(free_map_entry_fmt)
 
    def __init__(self, base_name):
       self.page_size = 8192
@@ -199,22 +206,46 @@ class BPlusTree(object):
       self.b = (self.page_size - Page.page_header_fmt_size) / Page.entry_fmt_size
       if os.path.exists(self.filename):
          self.f = open(self.filename, "r+b")
+         self.free_map = self._load_free_map()
       else:
          self.f = open(self.filename, "w+b")
-         self._allocate_page()
+         self.free_map = self._create_freemap()
+         self.flush()
+
+      self.free_cache = self._cache_freemap()
+
+   def _create_freemap(self):
+      m = memoryview(bytearray(self.page_size))
+      # Write the header, plus the references to the header and free map block
+      struct.pack_into(self.free_map_header_fmt + "BB", m, 0, 0, 1, 1)
+      return m
+
+   def _load_freemap(self):
+      self.f.seek(self.page_size, 0)
+      return memoryview(self.f.read(self.page_size))
+
+   def _cache_freemap(self):
+      cache = []
+      for i in range(self.free_map_header_fmt_size, len(self.free_map)):
+         b = ord(self.free_map[i])
+         if b == 0:
+            cache.append(i)
+      return cache
 
    def _set_root(self, offset):
       self.root_page = offset
 
    def _allocate_page(self):
-      self.f.seek(0, 2)
-      offset = self.f.tell()
-      self.f.write("\x00" * self.page_size)
-      return offset
+      i = self.free_cache.pop()
+      self.free_map[i] = chr(1)
+      return i * self.page_size
 
    def _get_page(self, offset):
       self.f.seek(offset)
-      return Page(memoryview(bytearray(self.f.read(self.page_size))), offset)
+      data = bytearray(self.f.read(self.page_size))
+      if len(data) == 0:
+         data = bytearray(self.page_size)
+      return Page(memoryview(data), offset)
 
    def _put_page(self, page):
       page.flush()
@@ -417,5 +448,7 @@ class BPlusTree(object):
             return results[2]
 
    def flush(self):
+      self.f.seek(self.page_size, 0)
+      self.f.write(self.free_map)
       self.f.flush()
 
