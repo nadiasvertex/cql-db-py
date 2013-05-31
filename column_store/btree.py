@@ -519,7 +519,7 @@ class BPlusTree(object):
       offset = self.root_page
       path = []
 
-      # print "insert", key, value
+      print "insert", key, value
 
       while True:
          page = self._get_page(offset)
@@ -528,8 +528,8 @@ class BPlusTree(object):
          # it may be needed to perform splitting.
          path.append(page)
 
-         # print "path:", "->".join([str(p.offset) for p in path])
-         # page.dump()
+         print "path:", "->".join([str(p.offset) for p in path])
+         page.dump()
 
          if page.page_type == Page.PAGE_TYPE_NODE:
             if page.count >= self.b:
@@ -538,6 +538,8 @@ class BPlusTree(object):
                   page = old_page
                else:
                   page = new_page
+
+               path[-1] = page
 
             for i in range(0, page.count):
                current_key, pointer = page.get_entry(i)
@@ -610,7 +612,6 @@ class BPlusTree(object):
             results = page.find_entry(key)
             if results == None:
                return None
-
             return results[2]
 
    def flush(self):
@@ -618,4 +619,3 @@ class BPlusTree(object):
       self._write_freemap()
       self.page_manager.flush()
       self.f.flush()
-
