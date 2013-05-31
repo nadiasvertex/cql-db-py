@@ -2,10 +2,62 @@
 Created on May 17, 2013
 
 @author: Christopher Nelson
+
+Splitting Example
+==================
+
+      (1,2,3,4,5) [full]
+
+      (3)------+
+       |       |
+      (1,2)  (3,4,5)
+
+      (3)---------------+
+       |                |
+      (-2,-1,0,1,2)  (3,4,5)
+
+      (0,      3)--------+
+       |       |         |
+      (-2,-1) (0,1,2)  (3,4,5)
+
+      (0,      3)--------+
+       |       |         |
+      (-2,-1) (0,1,2)  (3,4,5,6,7)
+
+      (0,      3,       5)-----+
+       |       |        |      |
+      (-2,-1) (0,1,2)  (3,4)  (5,6,7)
+
+      (0,      3,               5)-----+
+       |       |                |      |
+      (-2,-1) (0,1,2,2.1,2.2)  (3,4)  (5,6,7)
+
+      (0,      2,    3,          5)-----+
+       |       |     |           |      |
+      (-2,-1) (0,1) (2,2.1,2.2)  (3,4)  (5,6,7)
+
+      (0,      2,    3,          5,     11)-------------+
+       |       |     |           |      |               |
+      (-2,-1) (0,1) (2,2.1,2.2)  (3,4)  (5,6,7,8,9,10)  (11,12,13,14,15)
+
+      (3)------------+
+       |             |
+      (0,      2)   (3,          5,     11)-------------+
+       |       |     |           |      |               |
+      (-2,-1) (0,1) (2,2.1,2.2)  (3,4)  (5,6,7,8,9,10)  (11,12,13,14,15)
+
+
 '''
+
+
 
 import os
 import struct
+
+from hashlib import sha256
+
+class PageIntegrityError(Exception):
+   pass
 
 class Page(object):
    # key, value
@@ -19,11 +71,22 @@ class Page(object):
    PAGE_TYPE_NODE = 1
    PAGE_TYPE_LEAF = 0
 
-   def __init__(self, data, offset):
+   def __init__(self, data, offset, page_type=None, count=None, last_pointer=0):
       self.data = data
       self.offset = offset
       self.dirty = False
-      self.page_type, self.count, self.last_pointer = self._get_header()
+      if page_type != None:
+         self.page_type = page_type
+         self.count = count
+         self.last_pointer = last_pointer
+         self._put_header()
+      else:
+         self.page_type, self.count, self.last_pointer = self._get_header()
+
+      self.capacity = (len(data) - self.page_header_fmt_size) / self.entry_fmt_size
+
+      if self.count > self.capacity:
+         raise PageIntegrityError("page: %d, type: %d, count: %d, capacity: %d" % (offset, self.page_type, self.count, self.capacity))
 
    def dump(self):
       print "page at", self.offset, \
@@ -134,8 +197,9 @@ class Page(object):
          else:
             min_index = center + 1
 
-
    def get_entry(self, index):
+      if index > self.capacity:
+         raise IndexError("index: %d capacity: %d" % (index, self.capacity))
       offset = self.page_header_fmt_size + (self.entry_fmt_size * index)
       return struct.unpack_from(self.entry_fmt, self.data, offset)
 
@@ -190,39 +254,241 @@ class Page(object):
    def flush(self):
       self._put_header()
 
-class BPlusTree(object):
+class PageManager(object):
+   def __init__(self, f, page_size):
+      self.cache = {}
+      self.dirty = {}
+      self.f = f
+      self.page_size = page_size
 
-   def __init__(self, base_name):
-      self.page_size = 8192
-      self.root_page = 0
-      self.filename = base_name + ".idx"
-      self.b = (self.page_size - Page.page_header_fmt_size) / Page.entry_fmt_size
-      if os.path.exists(self.filename):
-         self.f = open(self.filename, "r+b")
-      else:
-         self.f = open(self.filename, "w+b")
-         self._allocate_page()
-
-   def _set_root(self, offset):
-      self.root_page = offset
-
-   def _allocate_page(self):
-      self.f.seek(0, 2)
-      offset = self.f.tell()
-      self.f.write("\x00" * self.page_size)
-      return offset
-
-   def _get_page(self, offset):
+   def _read_page(self, offset):
+      """
+      :synopsis: Reads a page to disk.
+      """
       self.f.seek(offset)
-      return Page(memoryview(bytearray(self.f.read(self.page_size))), offset)
+      data = bytearray(self.f.read(self.page_size))
+      if len(data) == 0:
+         data = bytearray(self.page_size)
+      return Page(data, offset)
 
-   def _put_page(self, page):
+   def _write_page(self, page):
+      """
+      :synopsis: Writes a page to disk.
+      """
       page.flush()
       self.f.seek(page.offset)
       self.f.write(page.data)
 
+   def get(self, offset):
+      """
+      :synopsis: Reads a page either from the cache or from the disk if not
+                present.
+      """
+      page = self.cache.get(offset)
+      if page == None:
+         page = self._read_page(offset)
+         self.cache[offset] = page
+
+      return page
+
+   def put(self, page):
+      """
+      :synopsis: Writes a page into the dirty cache.
+      """
+      self.dirty[page.offset] = page
+      if page.offset not in self.cache:
+         raise PageIntegrityError("page: %d not found in cache" % page.offset)
+
+   def create(self, offset, count, page_type, last_pointer=0):
+      page = Page(bytearray(self.page_size), offset, count=count,
+                  page_type=page_type, last_pointer=last_pointer)
+      self.cache[offset] = page
+      return page
+
+   def flush(self):
+      """
+      :synopsis: Sorts dirty pages and writes them to disk.
+      """
+      offsets = sorted(self.dirty.keys())
+      for offset in offsets:
+         self._write_page(self.dirty[offset])
+
+      self.dirty = {}
+
+class BPlusTree(object):
+   # next free map page
+   free_map_header_fmt = "<Q"
+   free_map_header_fmt_size = struct.calcsize(free_map_header_fmt)
+
+   # free map (one byte per page)
+   free_map_entry_fmt = "<B"
+   free_map_entry_fmt_size = struct.calcsize(free_map_entry_fmt)
+
+   # btree header: header_hash, page_size, root pointer
+   header_fmt = "<sLQ"
+   header_fmt_size = struct.calcsize(header_fmt)
+
+   def __init__(self, base_name, page_size=256):
+      # print "init page size=", page_size
+      self.page_size = page_size
+      self.root_page = page_size * 2
+      self.filename = base_name + ".idx"
+      self.b = (self.page_size - Page.page_header_fmt_size) / Page.entry_fmt_size
+
+      # Determine if the data file exists. If it does, load the existing
+      # settings. Otherwise initialize the system.
+      if os.path.exists(self.filename):
+         exists = True
+         self.f = open(self.filename, "r+b")
+         self._load_header()
+         self.free_map = self._load_freemap()
+      else:
+         self.f = open(self.filename, "w+b")
+         exists = False
+         self._write_header()
+         self.free_map = self._create_freemap()
+
+      # Create the page manager and cache the free map.
+      self.page_manager = PageManager(self.f, self.page_size)
+      self.free_cache = self._cache_freemap()
+
+      # Now that we have the page engine initialized with the right stuff, go
+      # ahead and create the leaf page if that's needed.
+      if not exists:
+         self._create_page(self.root_page, 0, Page.PAGE_TYPE_LEAF)
+         self.flush()
+
+   def _load_header(self):
+      self.f.seek(0, 0)
+      data = self.f.read(self.header_fmt_size)
+      _, page_size, root = struct.unpack(self.header_fmt, data)
+      # print "reading header, page size=", page_size, "root=", root
+      self._set_root(root)
+      self._set_page_size(page_size)
+
+   def _write_header(self):
+      self.f.seek(0, 0)
+      m = sha256()
+      # print "writing header, page size=", self.page_size, "root=", self.root_page
+      self.f.write(struct.pack(self.header_fmt, m.digest(), self.page_size, self.root_page))
+
+   def _create_freemap(self):
+      m = bytearray(self.page_size)
+      # Write the header, plus the references to the header and free map block
+      struct.pack_into(self.free_map_header_fmt + "BB", m, 0, 0, 1, 1)
+      return m
+
+   def _load_freemap(self):
+      self.f.seek(self.page_size, 0)
+      return bytearray(self.f.read(self.page_size))
+
+   def _write_freemap(self):
+      self.f.seek(self.page_size, 0)
+      self.f.write(self.free_map)
+
+   def _cache_freemap(self):
+      cache = []
+      for i in range(self.free_map_header_fmt_size, len(self.free_map)):
+         b = self.free_map[i]
+         if b == 0:
+            cache.append(i)
+      return cache
+
+   def _set_root(self, offset):
+      self.root_page = offset
+      # print "set root=", offset
+
+   def _set_page_size(self, size):
+      self.page_size = size
+      # print "set page size=", size
+
+   def _allocate_page(self):
+      i = self.free_cache.pop()
+      self.free_map[i] = 1
+      return i * self.page_size
+
+   def _create_page(self, offset, count, page_type, last_pointer=0):
+      return self.page_manager.create(offset, count, page_type, last_pointer)
+
+   def _get_page(self, offset):
+      return self.page_manager.get(offset)
+
+   def _put_page(self, page):
+      self.page_manager.put(page)
+
+   def _split_page(self, path, page_type):
+      """
+      :synopsis: Splits a page into two pages and promotes the middle key into
+      the parent. If no parent exists, a new parent is created.
+      """
+      # Find the middle entry
+      page_to_split = path[-1]
+      # page_to_split.dump()
+      middle_index = page_to_split.count / 2
+      middle_entry_key, _ = page_to_split.get_entry(middle_index)
+      # print "splitting at: ", middle_index, str(middle_entry_key)
+
+      # Move the middle entry and everything to the right of it into a new
+      # page.
+      new_page = self._create_page(self._allocate_page(),
+                                   (page_to_split.count - middle_index),
+                                   page_type)
+      page_to_split.copy_entries_to(new_page, middle_index, 0, new_page.count)
+
+      # Update the previous page to point to the new page, and to have fewer
+      # items in its inventory
+      page_to_split.count = middle_index
+
+      if page_type == Page.PAGE_TYPE_LEAF:
+         page_to_split.last_pointer = new_page.offset
+      else:
+         # Move the 'last-pointer' group over to the new page from the
+         # old page.
+         new_page.last_pointer = page_to_split.last_pointer
+         # Move the last key on the old page into the last_pointer slot
+         _, new_last_pointer = page_to_split.get_entry(page_to_split.count - 1)
+         page_to_split.last_pointer = new_last_pointer
+         page_to_split.count -= 1
+
+      self._put_page(new_page)
+      self._put_page(page_to_split)
+
+      # Insert a new key in the parent
+      if len(path) == 1:
+         # We are the root, make a new one
+         new_root_offset = self._allocate_page()
+         new_root = self._create_page(new_root_offset, 1, Page.PAGE_TYPE_NODE, new_page.offset)
+         new_root.put_entry(0, middle_entry_key, page_to_split.offset)
+         self._put_page(new_root)
+         self._set_root(new_root_offset)
+
+         # print "create new root"
+         # new_root.dump()
+         # page_to_split.dump()
+         # new_page.dump()
+      else:
+         # We have a parent, insert a new key into it to point to the existing
+         # page, and update the existing key to point to the new page.
+         parent_page = path[-2]
+         parent_page.upsert_entry(middle_entry_key,
+                                  new_page.offset, page_to_split.offset)
+         self._put_page(parent_page)
+         # print "split leaf"
+         # parent_page.dump()
+         # page_to_split.dump()
+         # new_page.dump()
+
+      return middle_entry_key, new_page, page_to_split
+
+
    def _split_node(self, path):
-      raise "not implemented"
+      """
+      :synopsis: Split this node into two nodes.
+
+      We may not have a parent, but we are guaranteed to have children. This is
+      always an inner btree node, and not a leaf.
+      """
+      return self._split_page(path, Page.PAGE_TYPE_NODE)
 
    def _split_leaf(self, path):
       """
@@ -246,107 +512,34 @@ class BPlusTree(object):
             that you use the last_pointer element from the page header as the
             pointer fetched in (i). (Also update it with the new page offset.)
 
-      (1,2,3,4,5)
-
-      (3)------+
-       |       |
-      (1,2)  (3,4,5)
-
-      (3)---------------+
-       |                |
-      (-2,-1,0,1,2)  (3,4,5)
-
-      (0,      3)--------+
-       |       |         |
-      (-2,-1) (0,1,2)  (3,4,5)
-
-      (0,      3)--------+
-       |       |         |
-      (-2,-1) (0,1,2)  (3,4,5,6,7)
-
-      (0,      3,       5)-----+
-       |       |        |      |
-      (-2,-1) (0,1,2)  (3,4)  (5,6,7)
-
-      (0,      3,               5)-----+
-       |       |                |      |
-      (-2,-1) (0,1,2,2.1,2.2)  (3,4)  (5,6,7)
-
-      (0,      2,    3,          5)-----+
-       |       |     |           |      |
-      (-2,-1) (0,1) (2,2.1,2.2)  (3,4)  (5,6,7)
-
-      """
-      # Find the middle entry
-      page_to_split = path[-1]
-      # page_to_split.dump()
-      middle_index = page_to_split.count / 2
-      middle_entry_key, _ = page_to_split.get_entry(middle_index)
-      # print "splitting at: ", middle_index, str(middle_entry_key)
-
-      # Move the middle entry and everything to the right of it into a new
-      # page.
-      new_page = self._get_page(self._allocate_page())
-      new_page.page_type = Page.PAGE_TYPE_LEAF
-      new_page.count = (page_to_split.count - middle_index)
-      page_to_split.copy_entries_to(new_page, middle_index, 0, new_page.count)
-
-      # Update the previous page to point to the new page, and to have fewer
-      # items in its inventory
-      page_to_split.page_type = Page.PAGE_TYPE_LEAF
-      page_to_split.count = middle_index
-      page_to_split.last_pointer = new_page.offset
-
-      self._put_page(new_page)
-      self._put_page(page_to_split)
-
-      # Insert a new key in the parent
-      if len(path) == 1:
-         # We are the root, make a new one
-         new_root_offset = self._allocate_page()
-         new_root = self._get_page(new_root_offset)
-         new_root.page_type = Page.PAGE_TYPE_NODE
-         new_root.count = 1
-         new_root.last_pointer = new_page.offset
-         new_root.put_entry(0, middle_entry_key, page_to_split.offset)
-         self._put_page(new_root)
-         self._set_root(new_root_offset)
-
-         # print "create new root"
-         # new_root.dump()
-         # page_to_split.dump()
-         # new_page.dump()
-      else:
-         # We have a parent, insert a new key into it to point to the existing
-         # page, and update the existing key to point to the new page.
-         parent_page = path[-2]
-         parent_page.upsert_entry(middle_entry_key,
-                                  new_page.offset, page_to_split.offset)
-         self._put_page(parent_page)
-         # print "split leaf"
-         # parent_page.dump()
-         # page_to_split.dump()
-         # new_page.dump()
-
-      return middle_entry_key, new_page, page_to_split
+            """
+      return self._split_page(path, Page.PAGE_TYPE_LEAF)
 
    def insert(self, key, value):
       offset = self.root_page
       path = []
 
-      # print "insert", key, value
+      print "insert", key, value
 
       while True:
          page = self._get_page(offset)
-         # page.dump()
 
          # Save the current page and offset in a path stack, since
          # it may be needed to perform splitting.
          path.append(page)
 
+         print "path:", "->".join([str(p.offset) for p in path])
+         page.dump()
+
          if page.page_type == Page.PAGE_TYPE_NODE:
             if page.count >= self.b:
-               self._split_node(path)
+               middle_entry_key, new_page, old_page = self._split_node(path)
+               if key < middle_entry_key:
+                  page = old_page
+               else:
+                  page = new_page
+
+               path[-1] = page
 
             for i in range(0, page.count):
                current_key, pointer = page.get_entry(i)
@@ -391,12 +584,18 @@ class BPlusTree(object):
 
    def find(self, key):
       offset = self.root_page
-
-      # print "find:", key
+      path = []
+      print "find:", key
 
       while True:
+         if offset == 0:
+            return None
+
          page = self._get_page(offset)
-         # page.dump()
+
+         path.append(page)
+         print "path:", "->".join([str(p.offset) for p in path])
+         page.dump()
 
          if page.page_type == Page.PAGE_TYPE_NODE:
             for i in range(0, page.count):
@@ -413,9 +612,10 @@ class BPlusTree(object):
             results = page.find_entry(key)
             if results == None:
                return None
-
             return results[2]
 
    def flush(self):
+      self._write_header()
+      self._write_freemap()
+      self.page_manager.flush()
       self.f.flush()
-
