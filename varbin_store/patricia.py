@@ -88,5 +88,5 @@ class Entry(object):
       self.key_frag_length = varint.decode_stream(f)
       child_count = varint.decode_stream(f)
       for i in range(0, child_count):
-         
+         pass
 
