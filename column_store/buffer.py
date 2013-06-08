@@ -37,7 +37,6 @@ class Lru(object):
       del self.lru[p.page_id]
       self.lru[p.page_id] = p
 
-
 class Manager(object):
    def __init__(self):
       self.pages = {}
