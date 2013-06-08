@@ -104,6 +104,9 @@ class Page(object):
          self.entries[index] = entry
       self.header.num += 1
 
+   def delete(self, entry):
+      pass
+
 
 class Entry(object):
    __slots__ = ["key", "ptr"]
