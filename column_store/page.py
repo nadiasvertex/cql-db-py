@@ -5,7 +5,8 @@ from functools import total_ordering
 
 BLOCK_SIZE = 2048
 MBLKSZ = 524288
-INVALID_PAGE = (1 << 64) - 1
+INVALID_PAGE = 0x0fffffffffffffff
+MAX_KEY_VALUE = (1 << 64) - 1
 
 class PageHead(object):
    fmt = "<QQLLQQQ"
