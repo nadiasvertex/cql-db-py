@@ -134,6 +134,41 @@ class Page(object):
 
       return False
 
+   def split_to(self, new_page, new_page_id):
+      """
+      :synopsis: Performs a btree split of the current page, moving half
+      the entries to 'new_page'.
+
+      Adjusts all of the counters on both pages to be correct.
+
+      :param new_page: The new page to move the entries to.
+      """
+      mid = self.header.num / 2
+      new_page.exploded = True
+      new_page.entries = self.entries[mid:]
+      new_page.header.num = len(new_page.entries)
+
+      self.entries = self.entries[0:mid]
+      self.header.num = len(self.entries)
+
+      new_page.header.next = self.header.next
+      new_page.header.level = self.header.level
+      new_page.header.parent = self.header.parent
+      self.header.next = new_page_id
+
+      # If we don't have a fence at the end of the entry list, we
+      # need to insert a new internal fence.
+      last_entry = self.entries[self.header.num - 1]
+      if not last_entry.ptr & Page.FENCE:
+         e = Entry(last_entry.key, last_entry.ptr | Page.INTERNAL_SET)
+         self.entries.append(e)
+         self.header.num += 1
+
+
+
+
+
+
 @total_ordering
 class Entry(object):
    __slots__ = ["key", "ptr"]
