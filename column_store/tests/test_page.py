@@ -76,3 +76,29 @@ class TestPage(unittest.TestCase):
       index = p.search(50)
       self.assertEqual(50, index)
 
+   def test_can_delete(self):
+      from column_store import page
+      p = page.Page(bytearray(self.BLOCK_SIZE), page.EntryFactory())
+
+      for i in range(100, 0, -1):
+         e = page.Entry(i, 100 + i)
+         p.insert(e)
+
+      self.assertTrue(p.delete(page.Entry(50, 150)))
+      self.assertEqual(99, p.header.num)
+
+   def test_can_delete_many(self):
+      from column_store import page
+      p = page.Page(bytearray(self.BLOCK_SIZE), page.EntryFactory())
+
+      for i in range(100, 0, -1):
+         e = page.Entry(i, 100 + i)
+         p.insert(e)
+
+      keys = [(i, 100 + i) for i in range(100, 0, -1)]
+      random.shuffle(keys)
+      for i in range(0, 100):
+         e = page.Entry(keys[i][0], keys[i][1])
+         self.assertTrue(p.delete(e), "failed deleting %d: %s" % (i, str(e)))
+         self.assertEqual(99 - i, p.header.num)
+
