@@ -1,6 +1,7 @@
 __author__ = 'Christopher Nelson'
 
 import struct
+from functools import total_ordering
 
 BLOCK_SIZE = 2048
 MBLKSZ = 524288
@@ -105,15 +106,49 @@ class Page(object):
       self.header.num += 1
 
    def delete(self, entry):
-      pass
+      if len(self.entries) == 1:
+         self.entries.pop()
+         self.header.num = 0
+         return True
 
+      # Check the previous position first
+      index = self.search(entry.key) - 1
+      cur_entry = self.entries[index]
 
+      # If that doesn't work, try the specified
+      # position
+      if cur_entry.key != entry.key:
+         index += 1
+         cur_entry = self.entries[index]
+
+      while cur_entry.key == entry.key:
+         if (not cur_entry.ptr & self.FENCE) and \
+          cur_entry == entry:
+            self.entries.pop(index)
+            self.header.num -= 1
+            return True
+
+         index += 1
+         cur_entry = self.entries[index]
+
+      return False
+
+@total_ordering
 class Entry(object):
    __slots__ = ["key", "ptr"]
 
    def __init__(self, key, ptr):
       self.key = key
       self.ptr = ptr
+
+   def __repr__(self):
+      return "Entry(%s,%s)" % (str(self.key), str(self.ptr))
+
+   def __eq__(self, other):
+      return ((self.key, self.ptr) == (other.key, other.ptr))
+
+   def __lt__(self, other):
+      return ((self.key, self.ptr) < (other.key, other.ptr))
 
 class EntryFactory(object):
    __slots__ = []
