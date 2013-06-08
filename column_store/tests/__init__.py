@@ -7,6 +7,7 @@ from test_value_store import TestValueStore
 from test_column import TestColumn
 from test_btree import TestBtree
 from test_buffer import TestBuffer
+from test_page import TestPage
 
 class TestPass(unittest.TestCase):
    def test_can_run_test(self):
