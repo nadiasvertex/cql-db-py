@@ -71,12 +71,22 @@ class BTree(object):
       e.ptr |= (page.Page.FENCE | page.Page.INTERNAL)
 
       self.page_buffer.mark_dirty(file_id, self.level_block[0])
-      self.level_block[0] += 1
+      self.level_block[0] += page.BLOCK_SIZE
 
    def _read_page(self, level, page_id):
       data = self.page_buffer.read_page(self.file_handle[level],
                                         self.file_id[level], page_id)
       return page.Page(data, self.entry_factory)
+
+   def _split(self, page_to_split, level, trace):
+      new_page_id = self.level_block[level]
+      page_data = self.page_buffer.new_page(self.file_handle[level],
+                                            self.file_id[level],
+                                            new_page_id)
+      self.level_block[level] += page.BLOCK_SIZE
+      new_page = page.Page(page_data, self.entry_factory)
+      page_to_split.split_to(new_page, new_page_id)
+
 
    def insert(self, entry):
       key = entry.key
@@ -96,7 +106,7 @@ class BTree(object):
       self.page_buffer.mark_dirty(self.file_id[0], page_id)
 
       if final_page.header.num >= self.entry_factory.get_entry_count_max():
-         self.split(final_page, 0, trace)
+         self._split(final_page, 0, trace)
 
       self.entry_count += 1
       return True
