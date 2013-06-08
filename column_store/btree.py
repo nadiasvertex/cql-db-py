@@ -11,7 +11,7 @@ import os
 import struct
 
 from column_store import page
-
+from column_store import buffer
 
 class TreeState(object):
    __slots__ = ["state_type", "fdtree", "file_id", "file_handle", "buffer", "mbuffer",
@@ -38,7 +38,7 @@ class TreeState(object):
 class BTree(object):
    __slots__ = ["file_id", "file_handle", "level_block", "max_block", "max_entry",
                 "entry_count", "block_count", "level_count", "root", "init_entry", "buffer",
-                "entry_factory"]
+                "entry_factory", "page_buffer"]
    def __init__(self, entry_factory=page.EntryFactory):
       self.file_id = []
       self.file_handle = []
@@ -52,15 +52,16 @@ class BTree(object):
       self.init_entry = 0
       self.buffer = None
       self.entry_factory = entry_factory()
+      self.page_buffer = buffer.Manager()
 
    def insert(self, entry):
-      #int offset1;
-      #Entry * data1;
+      # int offset1;
+      # Entry * data1;
       key = entry.key
       page_id = self.root
       trace = []
 
-      for i in range(0,self.level_count):
+      for i in range(0, self.level_count):
          current_level = self.level_count - i - 1
          trace[current_level] = page_id
          cur_page = self.read_page(self.file_handle[current_level], self.file_id[current_level], page_id)
@@ -74,5 +75,5 @@ class BTree(object):
       if final_page.entry_count >= self.entry_factory.get_entry_count_max():
          self.split(final_page, 0, trace)
 
-      self.entry_count+=1
+      self.entry_count += 1
       return True
