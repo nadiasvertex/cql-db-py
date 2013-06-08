@@ -4,6 +4,7 @@ import struct
 
 BLOCK_SIZE = 2048
 MBLKSZ = 524288
+INVALID_PAGE = (1 << 64) - 1
 
 
 class PageHead(object):
