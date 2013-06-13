@@ -55,6 +55,30 @@ class TestMqCache(unittest.TestCase):
       self.assertEqual(64, len(c.queues[0]))
       self.assertEqual(64, len(c.queues[2]))
 
+   def test_eviction(self):
+      class Evictor(object):
+         def __init__(self):
+            self.evictions = 0
+
+         def evict(self, key, value):
+            self.evictions+=1
+
+      from column_store.mq import Cache
+      e = Evictor()
+      c = Cache(capacity=128, queue_count=8, on_evict=e.evict)
+      for i in range(0,1024):
+         c.put(i, i<<16)
+
+      expected_eviction_count = 1024 - 128
+      self.assertEqual(expected_eviction_count, e.evictions)
+
+      for i in range(1024-128, 1024):
+         v = c.get(i)
+         self.assertEqual(i<<16,v)
+
+
+
+
 
 
 

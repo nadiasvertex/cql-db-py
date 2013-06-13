@@ -6,7 +6,7 @@ from glob import glob
 from test_value_store import TestValueStore
 from test_column import TestColumn
 from test_mq_cache import TestMqCache
-#from test_buffer import TestBuffer
+from test_buffer import TestBuffer
 #from test_page import TestPage
 
 class TestPass(unittest.TestCase):
