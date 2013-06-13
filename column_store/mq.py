@@ -32,7 +32,7 @@ class Cache(object):
          # If we are over capacity, or if a block has expired, move it to the
          # next level down.
          if len(q) > self.capacity or (len(q) and q[q.keys()[0]] < self.current_time):
-            key, value = q.popitem(True)
+            key, value = q.popitem(False)
             level_down = i - 1
             # If we are not at the very bottom, then just move it down a level
             if level_down >= 0:
@@ -40,6 +40,10 @@ class Cache(object):
             # Otherwise we must evict the value. Inform the user.
             elif self.on_evict:
                self.on_evict(key, value)
+
+   def iteritems(self):
+      for k,v in self.cache.iteritems():
+         yield (k,v)
 
    def get(self, key, default=None):
       """
