@@ -39,7 +39,7 @@ class Cache(object):
                self.queues[level_down][key] = value
             # Otherwise we must evict the value. Inform the user.
             elif self.on_evict:
-               self.on_evict(key, value)
+               self.on_evict(key, self.cache[key][1])
 
    def iteritems(self):
       for k,v in self.cache.iteritems():

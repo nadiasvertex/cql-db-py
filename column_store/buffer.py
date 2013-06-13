@@ -41,7 +41,7 @@ class Manager(object):
       f = self.file_handles[file_id]
       f.seek(page_id)
       data = bytearray(self.page_size)
-      f.read_into(data)
+      f.readinto(data)
       return data
 
    def flush(self):
@@ -59,8 +59,5 @@ class Manager(object):
       return page
 
    def evict_page(self, key, page):
-       page.persist(self, key[0], key[1])
-
-
-
-
+      if page.is_dirty():
+         page.persist(self, key[0], key[1])
