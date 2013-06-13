@@ -25,9 +25,18 @@ class Cache(object):
       self.queue_count = queue_count
       self.on_evict = on_evict
       self.cache = {}
+      self.history = OrderedDict()
       self.queues = [OrderedDict() for _ in range(0, queue_count)]
 
    def _check_for_demotion(self):
+      """
+      :synopsis: Checks the various queue levels to see if we need to demote
+                 a page from one level to another, or to evict a page from the
+                 cache. This is always called from put().
+
+      If the user has specified an eviction handler, the handler will be called
+      right before the item is evicted from the queue.
+      """
       for i, q in enumerate(self.queues):
          # If we are over capacity, or if a block has expired, move it to the
          # next level down.
@@ -42,6 +51,13 @@ class Cache(object):
                if self.on_evict:
                   self.on_evict(key, self.cache[key][1])
                del self.cache[key]
+               # Save the access count for this block. That way, if we
+               # load it again before we run out of history space, we
+               # can automatically promote it into the right level.
+               self.history[key] = value[1]
+               # If we are over-capcity then remove the oldest entry.
+               if len(self.history) > self.capacity * 2:
+                  self.history.popitem(False)
 
    def iteritems(self):
       for k, v in self.cache.iteritems():
@@ -83,7 +99,13 @@ class Cache(object):
                  algorithm to maintain cache size.
       :param key: The key to associate with 'value'.
       :param value: The value to store.
+
+      If the block is in our history (not our cache), then we will remember how
+      many accesses it had. We use this to promote a frequently accessed block
+      into a higher level than a brand new block.
       """
-      self.queues[0][key] = (self.current_time + self.life_time, 1)
-      self.cache[key] = (0, value)
+      access_count = self.history.get(key, 1)
+      level = min(int(math.log(access_count, 2)), self.queue_count - 1)
+      self.queues[level][key] = (self.current_time + self.life_time, access_count)
+      self.cache[key] = (level, value)
       self._check_for_demotion()
