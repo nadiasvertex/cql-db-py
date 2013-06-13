@@ -28,10 +28,10 @@ class Cache(object):
       self.queues = [OrderedDict() for _ in range(0, queue_count)]
 
    def _check_for_demotion(self):
-      for i, q in self.queues:
+      for i, q in enumerate(self.queues):
          # If we are over capacity, or if a block has expired, move it to the
          # next level down.
-         if len(q) > self.capacity or q.keys()[0][0] < self.current_time:
+         if len(q) > self.capacity or (len(q) and q[q.keys()[0]] < self.current_time):
             key, value = q.popitem(True)
             level_down = i - 1
             # If we are not at the very bottom, then just move it down a level
@@ -53,8 +53,8 @@ class Cache(object):
       """
       self.current_time += 1
       level, value = self.cache.get(key, (None, None))
-      if level == None:
-         if default != None:
+      if level is None:
+         if default is not None:
             self.put(key, default)
          return default
 
@@ -62,7 +62,7 @@ class Cache(object):
       expire_time = self.current_time + self.life_time
       access_count += 1
 
-      requested_level = int(max(math.log(access_count, 2), self.queue_count - 1))
+      requested_level = int(min(math.log(access_count, 2), self.queue_count - 1))
       if requested_level > level:
          del self.queues[level][key]
          level = requested_level
@@ -78,5 +78,6 @@ class Cache(object):
       :param key: The key to associate with 'value'.
       :param value: The value to store.
       """
-      self.queues[0][key] = value
+      self.queues[0][key] = (self.current_time + self.life_time, 1)
+      self.cache[key] = (0, value)
       self._check_for_demotion()
