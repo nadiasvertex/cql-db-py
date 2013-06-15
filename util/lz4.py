@@ -1,8 +1,8 @@
 __author__ = 'Christopher Nelson'
 
 """
-An LZ4 compressor/decompressor implemented based on the description
-at http://fastcompression.blogspot.com/2011/05/lz4-explained.html
+An LZ4 compressor/decompressor implemented based on reading the various
+implementations at http://code.google.com/p/lz4/
 """
 
 class LZ4Exception(Exception):
@@ -26,11 +26,13 @@ LZ4_64K_LIMIT = ((1 << 16) + (MF_LIMIT - 1))
 LAST_LITERALS = 5
 SIZE_OF_LONG_TIMES_TWO_SHIFT = 4
 STEP_SIZE = 8
-DEBRUIJN_BYTE_POS = [ 0, 0, 0, 0, 0, 1, 1, 2, 0, 3, 1, 3, 1, 4, 2, 7, 0, 2, 3, 6, 1, 5, 3, 5, 1, 3, 4, 4, 2, 5, 6, 7,
-                     7, 0, 1, 2, 3, 3, 4, 6, 2, 6, 5, 5, 3, 4, 5, 6, 7, 1, 2, 4, 6, 4, 4, 5, 7, 2, 6, 5, 7, 6, 7, 7 ]
+
+def fill_buffer(b, c):
+   for i in range(0, len(b)):
+      b[i] = c
 
 def lz4_hash(i, hash_log):
-   return (i * -1640531535) >> ((MIN_MATCH * 8) - hash_log)
+   return ((i * 2654435761) & 0xffffffff) >> ((MIN_MATCH * 8) - hash_log)
 
 def read_int(i, buf):
    return (buf[i] << 0) | (buf[i + 1] << 8) | (buf[i + 2] << 16) | (buf[i + 3] << 24)
@@ -91,11 +93,10 @@ class Compressor(object):
    Tuning parameters
    **************************************
    compression_level :
-        Increasing this value improves compression ratio
-        Lowering this value reduces memory usage
-        Reduced memory usage typically improves speed, due to cache effect (ex : L1 32KB for Intel, L1 64KB for AMD)
-        Memory usage formula : N->2^(N+2) Bytes (examples : 12 -> 16KB ; 17 -> 512KB)
-        4 is the minimum value
+        Memory usage formula : N->2^N Bytes (examples : 10 -> 1KB; 12 -> 4KB ; 16 -> 64KB; 20 -> 1MB; etc.)
+        Increasing memory usage improves compression ratio
+        Reduced memory usage can improve speed, due to cache effect
+        Default value is 14, for 16KB, which nicely fits into Intel x86 L1 cache
 
    not_compressible_confirmation :
         Decreasing this value will make the algorithm skip faster data segments considered "incompressible"
@@ -107,7 +108,7 @@ class Compressor(object):
    """
 
 
-   def __init__(self, compression_level=12, not_compressible_confirmation=6):
+   def __init__(self, compression_level=14, not_compressible_confirmation=6):
       self.compression_level = min(4, compression_level)
       self.skip_strength = min(not_compressible_confirmation, 2)
 
@@ -118,12 +119,10 @@ class Compressor(object):
       """
       return uncompressed_length + (uncompressed_length / 255) + 16
 
-   def _fill_buffer(self, b, c):
-      for i in range(0, len(b)):
-         b[i] = c
-
    def _get_hash(self, buf, i):
-      return lz4_hash(read_int(i, buf), self.compression_level)
+      inp = read_int(i, buf)
+      h = lz4_hash(inp, self.compression_level)
+      return h
 
    def _compress(self, src, src_offset, src_len, dst, dst_offset, max_dest_len):
       dst_end = dst_offset + max_dest_len
@@ -140,8 +139,7 @@ class Compressor(object):
       src_offset += 1
 
       hash_size = 1 << self.compression_level
-      hash_table = bytearray(hash_size)
-      self._fill_buffer(self.hash_table, anchor)
+      hash_table = [anchor for _ in range(0, hash_size)]
 
       while True:
          forward_offset = s_offset
@@ -248,7 +246,7 @@ class Compressor(object):
    def compress(self, data):
       max_size = self.max_compressed_length(len(data))
       dst = bytearray(max_size)
-      length = self._compress(data, dst)
+      length = self._compress(bytearray(data), 0, len(data), dst, 0, len(dst))
       final_dest = bytearray(length)
       final_dest[0:length] = dst[0:length]
       return final_dest
@@ -257,48 +255,90 @@ class Decompressor(object):
    def __init__(self):
       pass
 
-   def read_length(self, data, pos):
-      total_length = 15
+   def decompress(self, data, uncompressed_size):
+      out = bytearray(uncompressed_size)
+      return self._decompress(data, 0, out, 0, uncompressed_size)
+
+   def _decompress(self, src, src_offset, dst, dst_offset, dst_len):
+      if dst_len == 0:
+         if src[src_offset] != 0:
+            raise LZ4Exception("Malformed input at %d" % src_offset)
+         return 1
+
+      dest_end = dst_offset + dst_len
+
+      s_offset = src_offset
+      d_offset = dst_offset
+
       while True:
-         pos += 1
-         length = data[pos]
-         total_length += length
-         # A length of 255 indicates more bits coming, otherwise we
-         # have reached the end of our length field.
-         if length != 255:
-            break
+         token = src[s_offset] & 0xFF
+         s_offset += 1
 
-      return total_length, pos
+         # literals
+         literal_len = token >> ML_BITS
+         if literal_len == RUN_MASK:
+            length = src[s_offset]
+            while length == 0xFF:
+               s_offset += 1
+               literal_len += 0xFF
+               length = src[s_offset]
 
-   def read_sequence(self, data, pos):
-      token = data[pos]
-      literal_length = token >> 4
-      match_length = token & 0x0f
-      literals = []
+            literal_len += length & 0xFF
 
-      # Read the rest of the literal length if the field indicates that
-      # there are more bits coming.
-      if literal_length == 15:
-         literal_length, pos = self.read_length(data, pos)
+            literal_copy_end = d_offset + literal_len
+            if literal_copy_end > dest_end - COPY_LENGTH:
+               if literal_copy_end != dest_end:
+                  raise LZ4Exception("Malformed input at %d" % s_offset)
+               else:
+                  dst[d_offset:d_offset + literal_len] = src[s_offset:s_offset + literal_len]
+                  s_offset += literal_len
+                  break  # EOF
 
-      # Now read the literal bytes
-      for i in range(0, literal_length):
-         pos += 1
-         literals.append(data[pos])
+      dst[d_offset:d_offset + literal_len] = src[s_offset:s_offset + literal_len]
+      s_offset += literal_len
+      d_offset = literal_copy_end
 
-      # Read the offset field
-      pos += 1
-      offset = data[pos]
-      pos += 1
-      offset |= (data[pos] << 8)
+      # matchs
+      match_dec = (src[s_offset] & 0xFF) | ((src[s_offset + 1] & 0xFF) << 8)
+      s_offset += 2
+      match_off = d_offset - match_dec;
 
-      # Read the rest of the match length if the field indicates that
-      # there are more bits coming.
-      if match_length == 15:
-         match_length, pos = self.read_length(data, pos)
+      if match_off < dst_offset:
+         raise LZ4Exception("Malformed input at %d" + s_offset)
 
-      # Add the minmatch offset to the match_length
-      match_length += 4
+      match_len = token & ML_MASK
+      if match_len == ML_MASK:
+         length = src[s_offset]
+         s_offset += 1
+         while length == 0xFF:
+            match_len += 0xFF
 
+         match_len += length & 0xFF
+      match_len += MIN_MATCH;
+
+      match_copy_end = d_offset + match_len
+
+      if match_copy_end > dest_end - COPY_LENGTH:
+         if match_copy_end > dest_end:
+            raise LZ4Exception("Malformed input at %d" % s_offset)
+         dst[d_offset:d_offset + match_len] = dst[match_off:match_off + match_len]
+      else:
+         length = match_copy_end - match_off
+         dst[d_offset:d_offset + length] = dst[match_off:match_copy_end]
+      d_offset = match_copy_end
+
+      return s_offset - src_offset
+
+if __name__ == "__main__":
+   for test_string  in ("AAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBcdefghijklmnopqrstuvwxyz",
+                        "abcdefghijklmnopqrstuvwxyz"):
+      c = Compressor()
+      d = Decompressor()
+
+      out = c.compress(test_string)
+      print len(out), len(test_string)
+
+      round_trip = d.decompress(out, len(test_string))
+      print len(round_trip), round_trip
 
 
