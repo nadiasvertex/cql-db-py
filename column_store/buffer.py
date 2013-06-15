@@ -19,7 +19,7 @@ class Manager(object):
    from all files associated with a particular fdtree structure.
    '''
 
-   def __init__(self, size=DEFAULT_BUFFER_SIZE, page_size=PAGE_SIZE, page_factory = factory,
+   def __init__(self, size=DEFAULT_BUFFER_SIZE, page_size=PAGE_SIZE, page_factory=factory,
                 filename_base="data", filename_ext="db"):
       self.cache = Cache(capacity=size / page_size, on_evict=self.evict_page)
       self.size = size
@@ -45,13 +45,13 @@ class Manager(object):
       return data
 
    def flush(self):
-      for k,v in self.cache.iteritems():
+      for k, v in self.cache.iteritems():
          if v.is_dirty():
             v.persist(self, k[0], k[1])
             v.mark_dirty(False)
 
    def read_page(self, page_id, file_id):
-      page = self.cache.get((page_id,file_id))
+      page = self.cache.get((page_id, file_id))
       if page is None:
          data_page = self.read_page_uncached(page_id, file_id)
          page = self.page_factory(page_id, file_id, data_page)
