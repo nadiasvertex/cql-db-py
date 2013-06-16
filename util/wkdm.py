@@ -56,8 +56,8 @@ NUM_LOW_BITS = 10
 LOW_BITS_MASK = 0x3FF
 ALL_ONES_MASK = 0xFFFFFFFF
 
-TWO_BITS_PACKING_MASK = 0x03030303
-FOUR_BITS_PACKING_MASK = 0x0F0F0F0F
+TWO_BITS_PACKING_MASK = 0b11
+FOUR_BITS_PACKING_MASK = 0b1111
 TEN_LOW_BITS_MASK = 0x000003FF
 TWENTY_TWO_HIGH_BITS_MASK = 0xFFFFFC00
 
@@ -213,11 +213,10 @@ def unpack_2bits(input_buf, input_start, input_end, output_buf, output_start):
    the actual value.
    """
    input_next = input_start
-   output_next = output_start
    packing_mask = TWO_BITS_PACKING_MASK
 
    # loop to repeatedly grab one input word and unpack it into
-   # 4 output words.
+   # 16 output words.
    while input_next < input_end:
       temp = input_buf[input_next];
 
@@ -238,10 +237,7 @@ def unpack_2bits(input_buf, input_start, input_end, output_buf, output_start):
       output_buf.append((temp >> 28) & packing_mask)
       output_buf.append((temp >> 30) & packing_mask)
 
-      output_next += 16
       input_next += 1
-
-   return output_next;
 
 def unpack_4bits(input_buf, input_start, input_end, output_buf, output_start):
    """
@@ -375,8 +371,8 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
       next_input_word += 1
    # end of modeling loop
 
-   # print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
-   # print " low_bits_words:", len(temp_low_bits) / 3
+   print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
+   print " low_bits_words:", len(temp_low_bits) / 3
 
    # Record (into the header) where we stopped writing full words,
    # which is where we will pack the queue positions.  (Recall
@@ -450,16 +446,20 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    unpack_4bits(src_buf, src_buf[1], src_buf[2], temp_qpos, 0)
    unpack_3_10bits(src_buf, src_buf[2], src_buf[3], temp_low_bits, 0)
 
+   print "unpacked: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
+   print " low_bits_words:", len(temp_low_bits) / 3
+
    next_qpos = 0
    next_low_bits = 0
-   next_full_word = src_start + TAGS_AREA_SIZE + HEADER_SIZE_IN_WORDS
+   next_full_word = src_start + TAGS_AREA_SIZE
 
    for tag in temp_tags:
       if tag == ZERO_TAG:
          dest_buf.append(0)
       elif tag == EXACT_TAG:
-         dest_buf.append(dictionary[temp_qpos[next_qpos]])
+         dict_location = temp_qpos[next_qpos]
          next_qpos += 1
+         dest_buf.append(dictionary[dict_location])
       elif tag == PARTIAL_TAG:
          dict_location = temp_qpos[next_qpos]
          next_qpos += 1
@@ -501,7 +501,8 @@ if __name__ == "__main__":
    compressed_len = compress(src, 0, dst, 0, 1024)
    print compressed_len, int((float(compressed_len) / 1024.0) * 100.0), "%"
    print decompress(dst, 0, rtr, 0, compressed_len)
-   for i in range(0, 1024):
-      print hex(rtr[i]),
+   # for i in range(0, 1024):
+   #   print hex(rtr[i]), ":", hex(src[i])
 
+   print src == rtr
 
