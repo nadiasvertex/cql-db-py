@@ -217,17 +217,28 @@ def unpack_2bits(input_buf, input_start, input_end, output_buf, output_start):
    packing_mask = TWO_BITS_PACKING_MASK
 
    # loop to repeatedly grab one input word and unpack it into
-   # 4 output words.  This loop could be unrolled a little---it's
-   # designed to be easy to do that.
+   # 4 output words.
    while input_next < input_end:
       temp = input_buf[input_next];
 
-      output_buf[output_next] = temp & packing_mask;
-      output_buf[output_next + 1] = (temp >> 2) & packing_mask
-      output_buf[output_next + 2] = (temp >> 4) & packing_mask
-      output_buf[output_next + 3] = (temp >> 6) & packing_mask
+      output_buf.append(temp & packing_mask)
+      output_buf.append((temp >> 2) & packing_mask)
+      output_buf.append((temp >> 4) & packing_mask)
+      output_buf.append((temp >> 6) & packing_mask)
+      output_buf.append((temp >> 8) & packing_mask)
+      output_buf.append((temp >> 10) & packing_mask)
+      output_buf.append((temp >> 12) & packing_mask)
+      output_buf.append((temp >> 14) & packing_mask)
+      output_buf.append((temp >> 16) & packing_mask)
+      output_buf.append((temp >> 18) & packing_mask)
+      output_buf.append((temp >> 20) & packing_mask)
+      output_buf.append((temp >> 22) & packing_mask)
+      output_buf.append((temp >> 24) & packing_mask)
+      output_buf.append((temp >> 26) & packing_mask)
+      output_buf.append((temp >> 28) & packing_mask)
+      output_buf.append((temp >> 30) & packing_mask)
 
-      output_next += 4
+      output_next += 16
       input_next += 1
 
    return output_next;
@@ -245,15 +256,20 @@ def unpack_4bits(input_buf, input_start, input_end, output_buf, output_start):
    packing_mask = FOUR_BITS_PACKING_MASK
 
    # loop to repeatedly grab one input word and unpack it into
-   # 4 output words.  This loop should probably be unrolled
-   # a little---it's designed to be easy to do that.
+   # 4 output words.
    while input_next < input_end:
       temp = input_buf[input_next];
 
-      output_buf[output_next] = temp & packing_mask;
-      output_buf[output_next + 1] = (temp >> 4) & packing_mask
+      output_buf.append(temp & packing_mask)
+      output_buf.append((temp >> 4) & packing_mask)
+      output_buf.append((temp >> 8) & packing_mask)
+      output_buf.append((temp >> 12) & packing_mask)
+      output_buf.append((temp >> 16) & packing_mask)
+      output_buf.append((temp >> 20) & packing_mask)
+      output_buf.append((temp >> 24) & packing_mask)
+      output_buf.append((temp >> 28) & packing_mask)
 
-      output_next += 2
+      output_next += 8
       input_next += 1
 
    return output_next;
@@ -273,9 +289,9 @@ def unpack_3_10bits(input_buf, input_start, input_end, output_buf, output_start)
    while input_next < input_end:
       temp = input_buf[input_next];
 
-      output_buf[output_next] = temp & packing_mask;
-      output_buf[output_next + 1] = (temp >> 10) & packing_mask
-      output_buf[output_next + 2] = temp >> 20
+      output_buf.append(temp & packing_mask)
+      output_buf.append((temp >> 10) & packing_mask)
+      output_buf.append(temp >> 20)
 
       output_next += 3
       input_next += 1
@@ -309,7 +325,7 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    # boundary_tmp will be used for keeping track of what's where in
    # the compressed page during packing
 
-   boundary_tmp = 0
+   # boundary_tmp = 0
 
    # Fill pointers for filling intermediate arrays (of queue positions
    # and low bits) during encoding.
@@ -359,8 +375,8 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
       next_input_word += 1
    # end of modeling loop
 
-   print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
-   print " low_bits_words:", len(temp_low_bits) / 3
+   # print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
+   # print " low_bits_words:", len(temp_low_bits) / 3
 
    # Record (into the header) where we stopped writing full words,
    # which is where we will pack the queue positions.  (Recall
@@ -372,7 +388,6 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    # and the full words area.  We don't pad for the packer
    # because we assume that the page size is a multiple of 16.
    boundary_tmp = pack_2bits(temp_tags, 0, len(temp_tags), dest_buf, HEADER_SIZE_IN_WORDS)
-   print "wrote", boundary_tmp - HEADER_SIZE_IN_WORDS, "tags"
 
    # Pack the queue positions into the area just after
    # the full words.  We have to round up the source
@@ -409,12 +424,69 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    dest_buf[3] = boundary_tmp
    return boundary_tmp - dest_start
 
+def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
+   """
+   :param src_buf: An array of 32-bit words
+   :param src_start: Where to start reading in src_buf
+   :param dest_buf: An array of 32-bit words
+   :param dest_start: Where to start writing in dest_buf
+   :param num_input_words: The number of 32-bit words in src_buf
+   """
+   dictionary = [1 for _ in range(0, DICTIONARY_SIZE)]
+   hash_lookup_table = HASH_LOOKUP_TABLE_CONTENTS
+
+   # lists that hold output data in intermediate form during modeling
+   # and whose contents are packed into the actual output after modeling
+
+   # sizes of these arrays should be increased if you want to compress
+   # pages larger than 4KB
+
+   temp_tags = []  # tags for everything
+   temp_qpos = []  # queue positions for matches
+   temp_low_bits = []  # low bits for partial matches
+
+
+   unpack_2bits(src_buf, TAGS_AREA_OFFSET, TAGS_AREA_OFFSET + TAGS_AREA_SIZE, temp_tags, 0)
+   unpack_4bits(src_buf, src_buf[1], src_buf[2], temp_qpos, 0)
+   unpack_3_10bits(src_buf, src_buf[2], src_buf[3], temp_low_bits, 0)
+
+   next_qpos = 0
+   next_low_bits = 0
+   next_full_word = src_start + TAGS_AREA_SIZE + HEADER_SIZE_IN_WORDS
+
+   for tag in temp_tags:
+      if tag == ZERO_TAG:
+         dest_buf.append(0)
+      elif tag == EXACT_TAG:
+         dest_buf.append(dictionary[temp_qpos[next_qpos]])
+         next_qpos += 1
+      elif tag == PARTIAL_TAG:
+         dict_location = temp_qpos[next_qpos]
+         next_qpos += 1
+         temp = dictionary[dict_location]
+
+         # strip out low bits
+         temp = ((temp >> NUM_LOW_BITS) << NUM_LOW_BITS)
+         temp |= temp_low_bits[next_low_bits]
+         next_low_bits += 1
+
+         dictionary[dict_location] = temp
+         dest_buf.append(temp)
+      elif tag == MISS_TAG:
+         missed_word = src_buf[next_full_word]
+         next_full_word += 1
+         dict_location = hash_lookup_table[(missed_word >> 10) & 0xFF]
+         dictionary[dict_location] = missed_word
+         dest_buf.append(missed_word)
+
+   return len(dest_buf)
 
 if __name__ == "__main__":
    import array
 
    src = array.array("L")
    dst = array.array("L")
+   rtr = array.array("L")
 
    for _ in range(0, 1024):
       dst.append(0)
@@ -427,6 +499,9 @@ if __name__ == "__main__":
          j = 0
 
    compressed_len = compress(src, 0, dst, 0, 1024)
-   print compressed_len
-   for i in range(0, compressed_len):
-      print hex(dst[i]),
+   print compressed_len, int((float(compressed_len) / 1024.0) * 100.0), "%"
+   print decompress(dst, 0, rtr, 0, compressed_len)
+   for i in range(0, 1024):
+      print hex(rtr[i]),
+
+
