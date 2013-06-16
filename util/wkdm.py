@@ -371,8 +371,8 @@ def compress (src_buf, src_start, dest_buf, dest_start, num_input_words):
       next_input_word += 1
    # end of modeling loop
 
-   print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
-   print " low_bits_words:", len(temp_low_bits) / 3
+   # print "modeled: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
+   # print " low_bits_words:", len(temp_low_bits) / 3
 
    # Record (into the header) where we stopped writing full words,
    # which is where we will pack the queue positions.  (Recall
@@ -446,8 +446,8 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    unpack_4bits(src_buf, src_buf[1], src_buf[2], temp_qpos, 0)
    unpack_3_10bits(src_buf, src_buf[2], src_buf[3], temp_low_bits, 0)
 
-   print "unpacked: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
-   print " low_bits_words:", len(temp_low_bits) / 3
+   # print "unpacked: tag words:", len(temp_tags) / 16, " qpos words:", len(temp_qpos) / 8,
+   # print " low_bits_words:", len(temp_low_bits) / 3
 
    next_qpos = 0
    next_low_bits = 0
@@ -483,6 +483,7 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
 
 if __name__ == "__main__":
    import array
+   import time
 
    src = array.array("L")
    dst = array.array("L")
@@ -506,3 +507,26 @@ if __name__ == "__main__":
 
    print src == rtr
 
+   times = []; limit = 16384
+   for i in range(0, limit):
+      start = time.time()
+      compressed_len = compress(src, 0, dst, 0, 1024)
+      end = time.time()
+      times.append(end - start)
+
+   data_compressed = 4096 * limit
+   total_time = sum(times)
+   print "total:", data_compressed / 1024 / 1024, "MB"
+   print "compression rate: ", (data_compressed / total_time) / 1024 / 1204, "MBps"
+
+   times = []; limit = 16384
+   for i in range(0, limit):
+      rtr = array.array("L")
+      start = time.time()
+      decompress(dst, 0, rtr, 0, compressed_len)
+      end = time.time()
+      times.append(end - start)
+
+   total_time = sum(times)
+   print "total:", data_compressed / 1024 / 1024, "MB"
+   print "decompression rate: ", (data_compressed / total_time) / 1024 / 1204, "MBps"
