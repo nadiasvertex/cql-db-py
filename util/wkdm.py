@@ -441,7 +441,6 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    temp_qpos = []  # queue positions for matches
    temp_low_bits = []  # low bits for partial matches
 
-
    unpack_2bits(src_buf, TAGS_AREA_OFFSET, TAGS_AREA_OFFSET + TAGS_AREA_SIZE, temp_tags, 0)
    unpack_4bits(src_buf, src_buf[1], src_buf[2], temp_qpos, 0)
    unpack_3_10bits(src_buf, src_buf[2], src_buf[3], temp_low_bits, 0)
@@ -482,12 +481,11 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    return len(dest_buf)
 
 if __name__ == "__main__":
-   import array
    import time
 
-   src = array.array("L")
-   dst = array.array("L")
-   rtr = array.array("L")
+   src = []
+   dst = []
+   rtr = []
 
    for _ in range(0, 1024):
       dst.append(0)
@@ -507,7 +505,7 @@ if __name__ == "__main__":
 
    print src == rtr
 
-   times = []; limit = 16384
+   times = []; limit = 32768
    for i in range(0, limit):
       start = time.time()
       compressed_len = compress(src, 0, dst, 0, 1024)
@@ -519,9 +517,9 @@ if __name__ == "__main__":
    print "total:", data_compressed / 1024 / 1024, "MB"
    print "compression rate: ", (data_compressed / total_time) / 1024 / 1204, "MBps"
 
-   times = []; limit = 16384
+   times = []; limit = 32768
    for i in range(0, limit):
-      rtr = array.array("L")
+      rtr = []
       start = time.time()
       decompress(dst, 0, rtr, 0, compressed_len)
       end = time.time()
