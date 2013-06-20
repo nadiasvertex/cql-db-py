@@ -481,7 +481,10 @@ def decompress (src_buf, src_start, dest_buf, dest_start, num_input_words):
    return len(dest_buf)
 
 if __name__ == "__main__":
+   import zlib
+   import wkdm_native
    import time
+   import struct
 
    src = []
    dst = []
@@ -505,19 +508,36 @@ if __name__ == "__main__":
 
    print src == rtr
 
-   times = []; limit = 32768
+   bsrc = struct.pack("1024L", *src)
+
+   times = []; ztimes = []; ntimes = []
+   limit = 1 << 18
    for i in range(0, limit):
       start = time.time()
       compressed_len = compress(src, 0, dst, 0, 1024)
       end = time.time()
       times.append(end - start)
 
+      start = time.time()
+      out = zlib.compress(bsrc, zlib.Z_BEST_SPEED)
+      end = time.time()
+      ztimes.append(end - start)
+
+      start = time.time()
+      out2 = wkdm_native.compress(src, 1024)
+      end = time.time()
+      ntimes.append(end - start)
+
    data_compressed = 4096 * limit
    total_time = sum(times)
+   ztotal_time = sum(ztimes)
+   ntotal_time = sum(ntimes)
    print "total:", data_compressed / 1024 / 1024, "MB"
    print "compression rate: ", (data_compressed / total_time) / 1024 / 1204, "MBps"
+   print "zlib compression rate: ", (data_compressed / ztotal_time) / 1024 / 1204, "MBps"
+   print "wkdm C compression rate: ", (data_compressed / ntotal_time) / 1024 / 1204, "MBps"
 
-   times = []; limit = 32768
+   times = []; ztimes = []
    for i in range(0, limit):
       rtr = []
       start = time.time()
@@ -525,6 +545,13 @@ if __name__ == "__main__":
       end = time.time()
       times.append(end - start)
 
+      start = time.time()
+      zlib.decompress(out)
+      end = time.time()
+      ztimes.append(end - start)
+
    total_time = sum(times)
+   ztotal_time = sum(ztimes)
    print "total:", data_compressed / 1024 / 1024, "MB"
    print "decompression rate: ", (data_compressed / total_time) / 1024 / 1204, "MBps"
+   print "zlib decompression rate: ", (data_compressed / ztotal_time) / 1024 / 1204, "MBps"
