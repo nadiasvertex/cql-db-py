@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configurationDescriptor version="89">
+  <logicalFolder name="root" displayName="root" projectFiles="true" kind="ROOT">
+    <df root="." name="cql-db-py">
+      <df name="column_store">
+        <df name="__pycache__">
+        </df>
+        <df name="tests">
+          <df name="__pycache__">
+          </df>
+        </df>
+      </df>
+      <df name="key_store">
+        <df name="tests">
+        </df>
+      </df>
+      <df name="native">
+        <df name="src">
+          <df name="cpp">
+            <df name="compression">
+              <in>wkdm.cpp</in>
+              <in>wkdm.h</in>
+            </df>
+          </df>
+          <df name="d">
+            <df name="buffer">
+            </df>
+            <df name="cache">
+            </df>
+            <df name="compression">
+            </df>
+          </df>
+        </df>
+      </df>
+      <df name="res">
+        <df name="fdtree">
+          <df name="config">
+          </df>
+          <df name="load">
+          </df>
+          <df name="src">
+            <in>Timer.cpp</in>
+            <in>Timer.h</in>
+            <in>btree.cpp</in>
+            <in>btree.h</in>
+            <in>buffer.cpp</in>
+            <in>buffer.h</in>
+            <in>error.cpp</in>
+            <in>error.h</in>
+            <in>fdtree.cpp</in>
+            <in>fdtree.h</in>
+            <in>lruque.cpp</in>
+            <in>lruque.h</in>
+            <in>main.cpp</in>
+            <in>model.cpp</in>
+            <in>pageTable.cpp</in>
+            <in>pageTable.h</in>
+            <in>storage.cpp</in>
+            <in>storage.h</in>
+          </df>
+        </df>
+      </df>
+      <df name="util">
+        <df name="__pycache__">
+        </df>
+        <df name="tests">
+        </df>
+      </df>
+      <df name="varbin_store">
+        <df name="__pycache__">
+        </df>
+      </df>
+    </df>
+  </logicalFolder>
+  <projectmakefile>Makefile</projectmakefile>
+  <confs>
+    <conf name="Default" type="0">
+      <toolsSet>
+        <developmentServer>localhost</developmentServer>
+        <platform>2</platform>
+      </toolsSet>
+      <compile>
+        <compiledirpicklist>
+          <compiledirpicklistitem>.</compiledirpicklistitem>
+          <compiledirpicklistitem>${AUTO_FOLDER}</compiledirpicklistitem>
+        </compiledirpicklist>
+        <compiledir>${AUTO_FOLDER}</compiledir>
+        <compilecommandpicklist>
+          <compilecommandpicklistitem>${MAKE} ${ITEM_NAME}.o</compilecommandpicklistitem>
+          <compilecommandpicklistitem>${AUTO_COMPILE}</compilecommandpicklistitem>
+        </compilecommandpicklist>
+        <compilecommand>${AUTO_COMPILE}</compilecommand>
+      </compile>
+      <dbx_gdbdebugger version="1">
+        <gdb_pathmaps>
+        </gdb_pathmaps>
+        <gdb_interceptlist>
+          <gdbinterceptoptions gdb_all="false" gdb_unhandled="true" gdb_unexpected="true"/>
+        </gdb_interceptlist>
+        <gdb_options>
+          <DebugOptions>
+          </DebugOptions>
+        </gdb_options>
+        <gdb_buildfirst gdb_buildfirst_overriden="false" gdb_buildfirst_old="false"/>
+      </dbx_gdbdebugger>
+      <nativedebugger version="1">
+        <engine>gdb</engine>
+      </nativedebugger>
+      <runprofile version="9">
+        <runcommandpicklist>
+          <runcommandpicklistitem>"${OUTPUT_PATH}"</runcommandpicklistitem>
+        </runcommandpicklist>
+        <runcommand>"${OUTPUT_PATH}"</runcommand>
+        <rundir>.</rundir>
+        <buildfirst>false</buildfirst>
+        <terminal-type>0</terminal-type>
+        <remove-instrumentation>0</remove-instrumentation>
+        <environment>
+        </environment>
+      </runprofile>
+    </conf>
+  </confs>
+</configurationDescriptor>
