@@ -3,4 +3,10 @@ syntax: glob
 *.*~
 test.*
 .idea/*
+*.o
+test_*.map
+test_*.db
+test_*.rle
+test_*.values
+cql_tests
 
