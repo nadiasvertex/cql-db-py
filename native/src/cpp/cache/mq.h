@@ -41,6 +41,7 @@ using namespace std;
 template<typename K, typename V>
 class mq {
 private:
+	// Types ///////////////////////////////////////////////////////////////////
 	typedef list<K> queue_list_t;
 
 	struct history_item {
@@ -55,19 +56,29 @@ private:
 		typename queue_list_t::iterator q_el;
 	};
 
-	typedef map<K, uint64_t> history_map_t;
+	typedef map<K, history_item> history_map_t;
 	typedef map<K, cache_item> cache_map_t;
 
+	// Cache Variables /////////////////////////////////////////////////////////
 	uint64_t current_time;
 	uint64_t capacity;
 	uint8_t life_time;
 	uint8_t queue_count;
 
 	history_map_t history;
+	queue_list_t history_queue;
+
 	cache_map_t cache;
 	queue_list_t *queues;
 
 	function<void(K, V)> on_evict;
+
+	// Statistics //////////////////////////////////////////////////////////////
+	uint64_t eviction_count;
+	uint64_t hit_count;
+	uint64_t miss_count;
+	uint64_t history_hit_count;
+	uint64_t history_miss_count;
 
 private:
 	/*
@@ -75,50 +86,81 @@ private:
 	 *  Checks the various queue levels to see if we need to demote
 	 *  a page from one level to another, or to evict a page from the
 	 *  cache. This is always called from put().
-     *
+	 *
 	 *  If the user has specified an eviction handler, the handler will be called
 	 *  right before the item is evicted from the queue.
 	 *
 	 */
 	void _check_for_demotion() {
-		  auto i = 0;
-	      for(auto &q : queues) {
-	         // If we are over capacity, or if a block has expired, move it to the
-	         // next level down.
-	         if (q.size() > capacity ||
-	        		 (q.size() && q.begin().info.current_time < current_time)) {
-	        	auto key = q.front();
-	        	q.pop_front();
-	            auto level_down = i - 1;
 
-	            // If we are not at the very bottom, then just move it down a level
-	            if (level_down >= 0) {
-	               queues[level_down].push_back(key);
-	            } else {
-	            	// Otherwise we must evict the value. Inform the user.
-	            	auto it = cache.find(key);
-	               if (on_evict!=nullptr) {
-	                  on_evict(it->first, it->second);
-	               }
+		for (auto i = queue_count-1; i >=0; i--) {
+			auto&q = queues[i];
+			if (q.empty()) {
+				continue;
+			}
+			auto key = q.front();
+			auto& el = cache[key];
 
-	               // Save the access count for this block. That way, if we
-	               // load it again before we run out of history space, we
-	               // can automatically promote it into the right level.
-	               history[key] = it->second.info;
-	               cache.remove(key);
-	               // If we are over-capacity then remove the oldest entry.
-	               if (history.size() >  capacity * 2) {
-	                  history.pop_front();
-	         	   }
-	            }
-	         }
-	      }
+			// If we are over capacity, or if a block has expired, move it to the
+			// next level down.
+			if (q.size() > capacity
+					|| (el.info.expire_time < current_time)) {
+
+				q.pop_front();
+				auto level_down = i - 1;
+
+				// If we are not at the very bottom, then just move it down a level
+				if (level_down >= 0) {
+					auto el = cache.find(key);
+					auto& nq = queues[level_down];
+					el->second.q_el = nq.insert(nq.end(), key);
+				} else {
+					// Otherwise we must evict the value. Inform the user.
+					auto it = cache.find(key);
+					if (on_evict != nullptr) {
+						on_evict(it->first, it->second.value);
+						eviction_count++;
+					}
+
+					// Save the access count for this block. That way, if we
+					// load it again before we run out of history space, we
+					// can automatically promote it into the right level.
+					history[key] = it->second.info;
+					history_queue.push_back(key);
+					cache.erase(key);
+					// If we are over-capacity then remove the oldest entry.
+					if (history.size() > capacity * 2) {
+						auto it = history.begin();
+						history.erase(it->first);
+						history_queue.pop_front();
+					}
+				}
+			}
+		}
 	}
 
 public:
-	mq() :
-			current_time(0), life_time(32), queue_count(8), capacity(1024), on_evict(nullptr) {
+	mq(uint64_t _capacity, uint8_t _life_time, uint8_t _queue_count,
+			decltype(on_evict) _on_evict) :
+			current_time(0), life_time(_life_time), queue_count(_queue_count), capacity(
+					_capacity / _queue_count), on_evict(_on_evict), eviction_count(0), hit_count(
+					0), miss_count(0), history_hit_count(0), history_miss_count(
+					0)
+
+	{
 		queues = new queue_list_t[queue_count];
+	}
+
+	mq(uint64_t _capacity) :
+			mq(_capacity, 32, 8, nullptr) {
+	}
+
+	mq(uint64_t _capacity, decltype(on_evict) _on_evict) :
+			mq(_capacity, 32, 8, _on_evict) {
+	}
+
+	mq() :
+			mq(1024, 32, 8, nullptr) {
 	}
 
 	~mq() {
@@ -127,6 +169,8 @@ public:
 
 	/**
 	 * Sets the eviction handler.
+	 *
+	 *
 	 */
 	void set_on_evict(decltype(on_evict) _on_evict) {
 		on_evict = _on_evict;
@@ -134,19 +178,20 @@ public:
 
 	/**
 	 *
-	 :synopsis: Tries to return the value associated with 'key'. If the
-	 key is not found, a default value may be specified. If
-	 that value is not None, a new key will be inserted into
-	 the cache with that value. Otherwise 'None' will be returned.
-
-	 :param key: The key for the value to fetch.
-	 :returns: The value or None on a cache miss.
+	 * :synopsis: Tries to return the value associated with 'key'. If the
+	 * key is not found, a default value may be specified. If
+	 * that value is not None, a new key will be inserted into
+	 * the cache with that value. Otherwise 'None' will be returned.
+	 *
+	 * :param key: The key for the value to fetch.
+	 * :returns: The value or None on a cache miss.
 	 *
 	 */
 	tuple<bool, V> get(const K& key) {
 		current_time += 1;
 		auto it = cache.find(key);
 		if (it == cache.end()) {
+			miss_count++;
 			return make_tuple(false, K());
 		}
 
@@ -165,11 +210,12 @@ public:
 					key);
 		}
 
+		hit_count++;
 		return make_tuple(true, entry.value);
 	}
 
 	/*
-	 *    Stores 'value' into the cache using 'key'. Uses the 'MQ'
+	 * :synopsis: Stores 'value' into the cache using 'key'. Uses the 'MQ'
 	 * algorithm to maintain cache size.
 	 *
 	 * :param key: The key to associate with 'value'.
@@ -184,24 +230,62 @@ public:
 		uint64_t access_count = 1;
 		auto history_el = history.find(key);
 		if (history_el != history.end()) {
-			access_count = history_el->second;
+			access_count = history_el->second.access_count;
+			history.erase(key);
+			history_queue.remove(key);
+			history_hit_count++;
+		} else {
+			history_miss_count++;
 		}
 
 		uint8_t level = min(static_cast<int>(log2(access_count)),
 				queue_count - 1);
 
 		auto it = queues[level].insert(queues[level].end(), key);
-	cache[key] = {
-		.value = value,
-		.level = level,
-		.q_el = it,
-		.info = {
-			.access_count = access_count,
-			.expire_time = current_time + life_time
-		}
-	};
-	//_check_for_demotion();
-}
+		cache[key] = {
+			.value = value,
+			.level = level,
+			.q_el = it,
+			.info = {
+				.access_count = access_count,
+				.expire_time = current_time + life_time
+			}
+		};
+
+		_check_for_demotion();
+	}
+
+	/**
+	 * :returns: The number of cache hits.
+	 */
+	uint64_t get_hit_count() const {
+		return hit_count;
+	}
+	/**
+	 * :returns: The number of cache misses.
+	 */
+	uint64_t get_miss_count() const {
+		return miss_count;
+	}
+	/**
+	 * :returns: The number of cache evictions.
+	 */
+	uint64_t get_eviction_count() const {
+		return eviction_count;
+	}
+	/**
+	 * :returns: The number of history cache hits.
+	 */
+	uint64_t get_history_hit_count() const {
+		return history_hit_count;
+	}
+
+	/**
+	 * :returns: The number of history cache misses.
+	 */
+	uint64_t get_history_miss_count() const {
+		return history_miss_count;
+	}
 };
 
 } // end namespace
