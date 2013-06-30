@@ -7,6 +7,7 @@
 
 #include <cache/mq.h>
 #include <memory>
+#include <iostream>
 
 #include <gtest/gtest.h>
 
@@ -42,14 +43,28 @@ TEST(MqCachTest, CanGetRepeatedly) {
 TEST(MqCachTest, CanPutMany) {
   cql::mq<int,int> q;
 
-  for(int i=0; i<50000; i++) {
+  auto limit = 100000;
+  auto total_capacity = 128;
+
+  for(int i=0; i<limit; i++) {
 	  q.put(i,i*100);
   }
 
-  for(int i=0; i<50000; i++) {
+  for(int i=0; i<limit-total_capacity; i++) {
+  	  auto r = q.get(i);
+  	  EXPECT_FALSE(get<0>(r));
+  	  EXPECT_EQ(int(), get<1>(r));
+  	  if (get<0>(r)) {
+  		  std::cout << "unexpected:" << i << "=" << get<1>(r) << std::endl;
+  	  }
+    }
+
+  for(int i=limit-1; i>=limit-total_capacity; i--) {
 	  auto r = q.get(i);
 	  EXPECT_TRUE(get<0>(r));
 	  EXPECT_EQ(get<1>(r), i*100);
   }
+
+  EXPECT_EQ(total_capacity, q.get_hit_count());
 }
 
