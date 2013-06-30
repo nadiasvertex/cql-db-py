@@ -30,4 +30,26 @@ TEST(MqCachTest, CanGet) {
   EXPECT_TRUE(get<0>(q.get(1)));
 }
 
+TEST(MqCachTest, CanGetRepeatedly) {
+  cql::mq<int,int> q;
+  q.put(1,10);
+
+  for(int i=0; i<1000; i++) {
+	  EXPECT_TRUE(get<0>(q.get(1)));
+  }
+}
+
+TEST(MqCachTest, CanPutMany) {
+  cql::mq<int,int> q;
+
+  for(int i=0; i<50000; i++) {
+	  q.put(i,i*100);
+  }
+
+  for(int i=0; i<50000; i++) {
+	  auto r = q.get(i);
+	  EXPECT_TRUE(get<0>(r));
+	  EXPECT_EQ(get<1>(r), i*100);
+  }
+}
 

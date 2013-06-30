@@ -69,9 +69,55 @@ private:
 
 	function<void(K, V)> on_evict;
 
+private:
+	/*
+	 *
+	 *  Checks the various queue levels to see if we need to demote
+	 *  a page from one level to another, or to evict a page from the
+	 *  cache. This is always called from put().
+     *
+	 *  If the user has specified an eviction handler, the handler will be called
+	 *  right before the item is evicted from the queue.
+	 *
+	 */
+	void _check_for_demotion() {
+		  auto i = 0;
+	      for(auto &q : queues) {
+	         // If we are over capacity, or if a block has expired, move it to the
+	         // next level down.
+	         if (q.size() > capacity ||
+	        		 (q.size() && q.begin().info.current_time < current_time)) {
+	        	auto key = q.front();
+	        	q.pop_front();
+	            auto level_down = i - 1;
+
+	            // If we are not at the very bottom, then just move it down a level
+	            if (level_down >= 0) {
+	               queues[level_down].push_back(key);
+	            } else {
+	            	// Otherwise we must evict the value. Inform the user.
+	            	auto it = cache.find(key);
+	               if (on_evict!=nullptr) {
+	                  on_evict(it->first, it->second);
+	               }
+
+	               // Save the access count for this block. That way, if we
+	               // load it again before we run out of history space, we
+	               // can automatically promote it into the right level.
+	               history[key] = it->second.info;
+	               cache.remove(key);
+	               // If we are over-capacity then remove the oldest entry.
+	               if (history.size() >  capacity * 2) {
+	                  history.pop_front();
+	         	   }
+	            }
+	         }
+	      }
+	}
+
 public:
 	mq() :
-			current_time(0), life_time(32), queue_count(8), capacity(1024) {
+			current_time(0), life_time(32), queue_count(8), capacity(1024), on_evict(nullptr) {
 		queues = new queue_list_t[queue_count];
 	}
 
@@ -109,11 +155,14 @@ public:
 		entry.info.expire_time = current_time + life_time;
 		entry.info.access_count += 1;
 
-		uint8_t requested_level = min(static_cast<int>(log2(entry.info.access_count)),
+		uint8_t requested_level = min(
+				static_cast<int>(log2(entry.info.access_count)),
 				queue_count - 1);
 		if (requested_level > entry.level) {
 			queues[entry.level].erase(entry.q_el);
 			entry.level = requested_level;
+			entry.q_el = queues[entry.level].insert(queues[entry.level].end(),
+					key);
 		}
 
 		return make_tuple(true, entry.value);

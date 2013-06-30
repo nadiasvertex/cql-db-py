@@ -5,7 +5,7 @@ test_code = glob("native/src/cpp/gtest/*.cc") + \
             glob("native/src/cpp/test/*.cpp")
 
 env = Environment(CXX="clang++",
-                  CXXFLAGS="-std=c++11 -Inative/src/cpp",
+                  CXXFLAGS="-g -std=c++11 -Inative/src/cpp",
                   LIBS=["pthread"])
 
 env['ENV']['TERM'] = os.environ['TERM']
