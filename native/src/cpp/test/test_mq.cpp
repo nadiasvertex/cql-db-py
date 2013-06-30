@@ -18,4 +18,16 @@ TEST(MqCachTest, CanCreate) {
   EXPECT_NO_THROW(test());
 }
 
+TEST(MqCachTest, CanPut) {
+  cql::mq<int,int> q;
+  q.put(1,10);
+}
+
+TEST(MqCachTest, CanGet) {
+  cql::mq<int,int> q;
+  q.put(1,10);
+
+  EXPECT_TRUE(get<0>(q.get(1)));
+}
+
 
