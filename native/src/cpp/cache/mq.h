@@ -11,10 +11,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <deque>
+#include <list>
+#include <functional>
 #include <map>
+#include <tuple>
 #include <utility>
-
 
 namespace cql {
 
@@ -40,6 +41,8 @@ using namespace std;
 template<typename K, typename V>
 class mq {
 private:
+	typedef list<K> queue_list_t;
+
 	struct history_item {
 		uint64_t access_count;
 		uint64_t expire_time;
@@ -49,11 +52,11 @@ private:
 		V value;
 		uint8_t level;
 		history_item info;
+		typename queue_list_t::iterator q_el;
 	};
 
 	typedef map<K, uint64_t> history_map_t;
 	typedef map<K, cache_item> cache_map_t;
-	typedef deque<K> queue_list_t;
 
 	uint64_t current_time;
 	uint64_t capacity;
@@ -64,10 +67,8 @@ private:
 	cache_map_t cache;
 	queue_list_t *queues;
 
-	//self.on_evict = on_evict
-	//self.cache = {}
-	//self.history = OrderedDict()
-	//self.queues = [OrderedDict() for _ in range(0, queue_count)]
+	function<void(K, V)> on_evict;
+
 public:
 	mq() :
 			current_time(0), life_time(32), queue_count(8), capacity(1024) {
@@ -75,7 +76,47 @@ public:
 	}
 
 	~mq() {
-		delete [] queues;
+		delete[] queues;
+	}
+
+	/**
+	 * Sets the eviction handler.
+	 */
+	void set_on_evict(decltype(on_evict) _on_evict) {
+		on_evict = _on_evict;
+	}
+
+	/**
+	 *
+	 :synopsis: Tries to return the value associated with 'key'. If the
+	 key is not found, a default value may be specified. If
+	 that value is not None, a new key will be inserted into
+	 the cache with that value. Otherwise 'None' will be returned.
+
+	 :param key: The key for the value to fetch.
+	 :returns: The value or None on a cache miss.
+	 *
+	 */
+	tuple<bool, V> get(const K& key) {
+		current_time += 1;
+		auto it = cache.find(key);
+		if (it == cache.end()) {
+			return make_tuple(false, K());
+		}
+
+		auto entry = it->second;
+
+		entry.info.expire_time = current_time + life_time;
+		entry.info.access_count += 1;
+
+		uint8_t requested_level = min(static_cast<int>(log2(entry.info.access_count)),
+				queue_count - 1);
+		if (requested_level > entry.level) {
+			queues[entry.level].erase(entry.q_el);
+			entry.level = requested_level;
+		}
+
+		return make_tuple(true, entry.value);
 	}
 
 	/*
@@ -84,30 +125,34 @@ public:
 	 *
 	 * :param key: The key to associate with 'value'.
 	 * :param value: The value to store.
-     *
+	 *
 	 * If the block is in our history (not our cache), then we will remember how
 	 * many accesses it had. We use this to promote a frequently accessed block
 	 * into a higher level than a brand new block.
 	 *
 	 */
 	void put(const K &key, const V &value) {
-		auto access_count = 1;
+		uint64_t access_count = 1;
 		auto history_el = history.find(key);
 		if (history_el != history.end()) {
 			access_count = history_el->second;
 		}
 
-		auto level = min(log2(access_count), queue_count - 1);
-		queues[level].push_back(key);
-		cache[key] = {.value = value,
-		              .level = level,
-		              .info = {
-		            		   .access_count=access_count,
-		                       .expire_time = current_time + life_time
-		                      }
-					  };
-		//_check_for_demotion();
-	}
+		uint8_t level = min(static_cast<int>(log2(access_count)),
+				queue_count - 1);
+
+		auto it = queues[level].insert(queues[level].end(), key);
+	cache[key] = {
+		.value = value,
+		.level = level,
+		.q_el = it,
+		.info = {
+			.access_count = access_count,
+			.expire_time = current_time + life_time
+		}
+	};
+	//_check_for_demotion();
+}
 };
 
 } // end namespace
