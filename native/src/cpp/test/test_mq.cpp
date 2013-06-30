@@ -14,33 +14,37 @@
 using namespace std;
 
 // Tests that we can create a cql::mq object.
-TEST(MqCachTest, CanCreate) {
+TEST(MqCacheTest, CanCreate) {
   auto test = [] { std::unique_ptr<cql::mq<int,int>>(new cql::mq<int,int>()); };
   EXPECT_NO_THROW(test());
 }
 
-TEST(MqCachTest, CanPut) {
+TEST(MqCacheTest, CanPut) {
   cql::mq<int,int> q;
   q.put(1,10);
 }
 
-TEST(MqCachTest, CanGet) {
+TEST(MqCacheTest, CanGet) {
   cql::mq<int,int> q;
   q.put(1,10);
 
   EXPECT_TRUE(get<0>(q.get(1)));
 }
 
-TEST(MqCachTest, CanGetRepeatedly) {
+TEST(MqCacheTest, CanGetRepeatedly) {
   cql::mq<int,int> q;
   q.put(1,10);
 
-  for(int i=0; i<1000; i++) {
+  auto repeats = 1<<10;
+
+  for(int i=0; i<repeats; i++) {
 	  EXPECT_TRUE(get<0>(q.get(1)));
   }
+
+  EXPECT_EQ(repeats, q.get_hit_count());
 }
 
-TEST(MqCachTest, CanPutMany) {
+TEST(MqCacheTest, CanPutMany) {
   cql::mq<int,int> q;
 
   auto limit = 100000;
