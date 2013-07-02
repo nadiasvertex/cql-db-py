@@ -53,7 +53,6 @@ private:
 		V value;
 		uint8_t level;
 		history_item info;
-		typename queue_list_t::iterator q_el;
 	};
 
 	typedef map<K, history_item> history_map_t;
@@ -92,8 +91,7 @@ private:
 	 *
 	 */
 	void _check_for_demotion() {
-
-		for (auto i = queue_count-1; i >=0; i--) {
+		for (auto i = queue_count - 1; i >= 0; i--) {
 			auto&q = queues[i];
 			if (q.empty()) {
 				continue;
@@ -103,8 +101,7 @@ private:
 
 			// If we are over capacity, or if a block has expired, move it to the
 			// next level down.
-			if (q.size() > capacity
-					|| (el.info.expire_time < current_time)) {
+			if (q.size() > capacity || (el.info.expire_time < current_time)) {
 
 				q.pop_front();
 				auto level_down = i - 1;
@@ -113,7 +110,7 @@ private:
 				if (level_down >= 0) {
 					auto el = cache.find(key);
 					auto& nq = queues[level_down];
-					el->second.q_el = nq.insert(nq.end(), key);
+					nq.push_back(key);
 				} else {
 					// Otherwise we must evict the value. Inform the user.
 					auto it = cache.find(key);
@@ -143,8 +140,8 @@ public:
 	mq(uint64_t _capacity, uint8_t _life_time, uint8_t _queue_count,
 			decltype(on_evict) _on_evict) :
 			current_time(0), life_time(_life_time), queue_count(_queue_count), capacity(
-					_capacity / _queue_count), on_evict(_on_evict), eviction_count(0), hit_count(
-					0), miss_count(0), history_hit_count(0), history_miss_count(
+					_capacity / _queue_count), on_evict(_on_evict), eviction_count(
+					0), hit_count(0), miss_count(0), history_hit_count(0), history_miss_count(
 					0)
 
 	{
@@ -192,7 +189,7 @@ public:
 		auto it = cache.find(key);
 		if (it == cache.end()) {
 			miss_count++;
-			return make_tuple(false, K());
+			return make_tuple(false, V());
 		}
 
 		auto entry = it->second;
@@ -204,10 +201,13 @@ public:
 				static_cast<int>(log2(entry.info.access_count)),
 				queue_count - 1);
 		if (requested_level > entry.level) {
-			queues[entry.level].erase(entry.q_el);
+			auto& cq = queues[entry.level];
+			//cq.erase(entry.q_el);
+			cq.remove(key);
+
 			entry.level = requested_level;
-			entry.q_el = queues[entry.level].insert(queues[entry.level].end(),
-					key);
+			auto& rq = queues[entry.level];
+			rq.push_back(key);
 		}
 
 		hit_count++;
@@ -241,11 +241,11 @@ public:
 		uint8_t level = min(static_cast<int>(log2(access_count)),
 				queue_count - 1);
 
-		auto it = queues[level].insert(queues[level].end(), key);
+		auto& q = queues[level];
+		q.push_back(key);
 		cache[key] = {
 			.value = value,
 			.level = level,
-			.q_el = it,
 			.info = {
 				.access_count = access_count,
 				.expire_time = current_time + life_time
