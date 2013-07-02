@@ -15,60 +15,96 @@ using namespace std;
 
 // Tests that we can create a cql::mq object.
 TEST(MqCacheTest, CanCreate) {
-  auto test = [] { std::unique_ptr<cql::mq<int,int>>(new cql::mq<int,int>()); };
-  EXPECT_NO_THROW(test());
+	auto test = [] {std::unique_ptr<cql::mq<int,int>>(new cql::mq<int,int>());};
+	EXPECT_NO_THROW(test());
 }
 
 TEST(MqCacheTest, CanPut) {
-  cql::mq<int,int> q;
-  q.put(1,10);
+	cql::mq<int, int> q;
+	q.put(1, 10);
 }
 
 TEST(MqCacheTest, CanGet) {
-  cql::mq<int,int> q;
-  q.put(1,10);
+	cql::mq<int, int> q;
+	q.put(1, 10);
 
-  EXPECT_TRUE(get<0>(q.get(1)));
+	EXPECT_TRUE(get < 0 > (q.get(1)));
 }
 
 TEST(MqCacheTest, CanGetRepeatedly) {
-  cql::mq<int,int> q;
-  q.put(1,10);
+	cql::mq<int, int> q;
 
-  auto repeats = 1<<10;
+	auto repeats = 1 << 10;
 
-  for(int i=0; i<repeats; i++) {
-	  EXPECT_TRUE(get<0>(q.get(1)));
-  }
+	for (int i = 0; i < 128; i++) {
+		q.put(i, i * 100);
+	}
 
-  EXPECT_EQ(repeats, q.get_hit_count());
+	for (int j = 0; j < repeats; j++) {
+		for (int i = 0; i < 128; i++) {
+			EXPECT_TRUE(get < 0 > (q.get(i)));
+		}
+	}
 }
 
 TEST(MqCacheTest, CanPutMany) {
-  cql::mq<int,int> q;
+	cql::mq<int, int> q;
 
-  auto limit = 100000;
-  auto total_capacity = 128;
+	auto limit = 100000;
+	auto total_capacity = 128;
 
-  for(int i=0; i<limit; i++) {
-	  q.put(i,i*100);
-  }
+	for (int i = 0; i < limit; i++) {
+		q.put(i, i * 100);
+	}
 
-  for(int i=0; i<limit-total_capacity; i++) {
-  	  auto r = q.get(i);
-  	  EXPECT_FALSE(get<0>(r));
-  	  EXPECT_EQ(int(), get<1>(r));
-  	  if (get<0>(r)) {
-  		  std::cout << "unexpected:" << i << "=" << get<1>(r) << std::endl;
-  	  }
-    }
+	for (int i = 0; i < limit - total_capacity; i++) {
+		auto r = q.get(i);
+		EXPECT_FALSE(get < 0 > (r));
+		EXPECT_EQ(int(), get < 1 > (r));
+		if (get < 0 > (r)) {
+			std::cout << "unexpected:" << i << "=" << get < 1
+					> (r) << std::endl;
+		}
+	}
 
-  for(int i=limit-1; i>=limit-total_capacity; i--) {
-	  auto r = q.get(i);
-	  EXPECT_TRUE(get<0>(r));
-	  EXPECT_EQ(get<1>(r), i*100);
-  }
+	for (int i = limit - 1; i >= limit - total_capacity; i--) {
+		auto r = q.get(i);
+		EXPECT_TRUE(get < 0 > (r));
+		EXPECT_EQ(get < 1 > (r), i * 100);
+	}
 
-  EXPECT_EQ(total_capacity, q.get_hit_count());
+	EXPECT_EQ(total_capacity, q.get_hit_count());
 }
 
+TEST(MqCacheTest, CanGetRepeatedly2) {
+	cql::mq<int, int> q(128);
+
+	auto repeats = 1 << 10;
+
+	for (int i = 0; i < 128; i++) {
+		q.put(i, i * 100);
+	}
+
+	for (int j = 0; j < repeats; j++) {
+		for (int i = 0; i < 128; i++) {
+			get < 0 > (q.get(i));
+		}
+	}
+}
+
+TEST(MqCacheTest, CanGetRepeatedly3) {
+	int evictions = 0;
+	cql::mq<int, int> q(128, [&](int k, int v){evictions++;});
+
+	auto repeats = 1 << 10;
+
+	for (int i = 0; i < 128; i++) {
+		q.put(i, i * 100);
+	}
+
+	for (int j = 0; j < repeats; j++) {
+		for (int i = 0; i < 128; i++) {
+			get < 0 > (q.get(i));
+		}
+	}
+}
