@@ -110,27 +110,24 @@ private:
 
 				// If we are not at the very bottom, then just move it down a level
 				if (level_down >= 0) {
-					auto el = cache.find(key);
 					auto& nq = queues[level_down];
 					nq.push_back(key);
 				} else {
 					// Otherwise we must evict the value. Inform the user.
-					auto it = cache.find(key);
 					if (on_evict != nullptr) {
-						on_evict(it->first, it->second.value);
+						on_evict(key, el.value);
 						eviction_count++;
 					}
 
 					// Save the access count for this block. That way, if we
 					// load it again before we run out of history space, we
 					// can automatically promote it into the right level.
-					history[key] = it->second.info;
+					history[key] = el.info;
 					history_queue.push_back(key);
 					cache.erase(key);
 					// If we are over-capacity then remove the oldest entry.
 					if (history.size() > capacity * 2) {
-						auto it = history.begin();
-						history.erase(it->first);
+						history.erase(history_queue.front());
 						history_queue.pop_front();
 					}
 				}
@@ -252,7 +249,7 @@ public:
 				.expire_time = current_time + life_time
 			}
 		};
-
+		
 		_check_for_demotion();
 	}
 
