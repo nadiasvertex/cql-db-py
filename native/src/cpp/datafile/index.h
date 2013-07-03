@@ -34,12 +34,19 @@ private:
 	}
 	;
 public:
+	/**
+	 * Takes an entry number (0,1,2...) and converts it to an entry position.
+	 */
 	static entry_position from_uint64(uint64_t _position) {
-		return entry_position(_position);
+		return entry_position(_position * sizeof(uint64_t));
 	}
 
 	uint64_t get_file_position() const {
 		return position;
+	}
+
+	uint64_t get_entry_position() const {
+		return position / sizeof(uint64_t);
 	}
 };
 
@@ -101,7 +108,7 @@ public:
 
 		uint64_t *data = _get_index_page(page);
 
-		auto page_offset = pos - page;
+		auto page_offset = (pos - page) / sizeof(uint64_t);
 		return data[page_offset];
 	}
 
@@ -112,9 +119,6 @@ public:
 		uint64_t *data = _get_index_page(page);
 		auto page_offset = (pos - page) / sizeof(uint64_t);
 
-		if (page_offset > (page_size / sizeof(uint64_t))) {
-			return;
-		}
 		data[page_offset] = offset;
 	}
 
