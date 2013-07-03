@@ -249,7 +249,7 @@ public:
 				.expire_time = current_time + life_time
 			}
 		};
-		
+
 		_check_for_demotion();
 	}
 

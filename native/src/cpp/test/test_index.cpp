@@ -22,6 +22,8 @@ TEST(IndexFileTest, CanCreate) {
 TEST(IndexFileTest, CanWrite) {
 	cql::index idx("test.idx");
 
+	ASSERT_TRUE(idx.is_open());
+
 	for (int i = 0; i < 10000; i++) {
 		auto pos = cql::entry_position::from_uint64(i);
 		idx.put_entry_offset(pos, i * 100);
