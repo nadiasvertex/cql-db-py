@@ -110,12 +110,12 @@ public:
 		auto page = _get_page_from_offset(pos);
 
 		uint64_t *data = _get_index_page(page);
-		auto page_offset = pos - page;
+		auto page_offset = (pos - page) / sizeof(uint64_t);
 
 		if (page_offset > (page_size / sizeof(uint64_t))) {
 			return;
 		}
-		//data[page_offset] = offset;
+		data[page_offset] = offset;
 	}
 
 };
