@@ -11,11 +11,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <list>
+#include <deque>
 #include <functional>
 #include <map>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 namespace cql {
 
@@ -42,7 +43,7 @@ template<typename K, typename V>
 class mq {
 private:
 	// Types ///////////////////////////////////////////////////////////////////
-	typedef list<K> queue_list_t;
+	typedef deque<K> queue_list_t;
 
 	struct history_item {
 		uint64_t access_count;
@@ -68,7 +69,7 @@ private:
 	queue_list_t history_queue;
 
 	cache_map_t cache;
-	queue_list_t *queues;
+	vector<queue_list_t> queues;
 
 	function<void(K, V)> on_evict;
 
@@ -92,16 +93,17 @@ private:
 	 */
 	void _check_for_demotion() {
 		for (auto i = queue_count - 1; i >= 0; i--) {
-			auto&q = queues[i];
+			auto& q = queues[i];
 			if (q.empty()) {
 				continue;
 			}
 			auto key = q.front();
 			auto& el = cache[key];
+			auto q_size = q.size();
 
 			// If we are over capacity, or if a block has expired, move it to the
 			// next level down.
-			if (q.size() > capacity || (el.info.expire_time < current_time)) {
+			if (q_size > capacity || (el.info.expire_time < current_time)) {
 
 				q.pop_front();
 				auto level_down = i - 1;
@@ -142,10 +144,10 @@ public:
 			current_time(0), life_time(_life_time), queue_count(_queue_count), capacity(
 					_capacity / _queue_count), on_evict(_on_evict), eviction_count(
 					0), hit_count(0), miss_count(0), history_hit_count(0), history_miss_count(
-					0)
+					0), queues(queue_count)
 
 	{
-		queues = new queue_list_t[queue_count];
+
 	}
 
 	mq(uint64_t _capacity) :
@@ -161,7 +163,7 @@ public:
 	}
 
 	~mq() {
-		delete[] queues;
+		//delete[] queues;
 	}
 
 	/**
@@ -202,8 +204,7 @@ public:
 				queue_count - 1);
 		if (requested_level > entry.level) {
 			auto& cq = queues[entry.level];
-			//cq.erase(entry.q_el);
-			cq.remove(key);
+			remove(cq.begin(), cq.end(), key);
 
 			entry.level = requested_level;
 			auto& rq = queues[entry.level];
@@ -232,7 +233,7 @@ public:
 		if (history_el != history.end()) {
 			access_count = history_el->second.access_count;
 			history.erase(key);
-			history_queue.remove(key);
+			remove(history_queue.begin(), history_queue.end(), key);
 			history_hit_count++;
 		} else {
 			history_miss_count++;

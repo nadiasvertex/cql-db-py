@@ -52,10 +52,12 @@ private:
 
 	uint64_t* _get_index_page_from_disk(uint64_t offset) {
 
-		index_file.seekg(offset, ios_base::beg);
-		uint64_t* data = new uint64_t[page_size / sizeof(uint64_t)];
-		index_file.read((char*) data, page_size);
 
+		index_file.seekg(offset, ios_base::beg);
+		char* buffer = new char[page_size];
+		index_file.read(buffer, page_size);
+
+		auto data = (uint64_t*)buffer;
 		cache.put(offset, data);
 		return data;
 	}
@@ -110,7 +112,10 @@ public:
 		uint64_t *data = _get_index_page(page);
 		auto page_offset = pos - page;
 
-		data[page_offset] = offset;
+		if (page_offset > (page_size / sizeof(uint64_t))) {
+			return;
+		}
+		//data[page_offset] = offset;
 	}
 
 };
