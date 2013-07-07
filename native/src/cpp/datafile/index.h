@@ -9,7 +9,9 @@
 #define CQL_DATAFILE_INDEX_H_
 
 #include "cache/mq.h"
+#include <iostream>
 #include <fstream>
+#include <cstring>
 
 /**
  * This index is intended only to be a fixed size entry index into the file. The
@@ -58,15 +60,19 @@ private:
 	mq<uint64_t, uint64_t*> cache;
 
 	void _put_index_page_to_disk(uint64_t offset, uint64_t *data) {
+		index_file.clear();
 		index_file.seekp(offset, ios_base::beg);
 		index_file.write((char *) data, page_size);
+		index_file.flush();
 		delete[] data;
 	}
 
 	uint64_t* _get_index_page_from_disk(uint64_t offset) {
 
+		index_file.clear();
 		index_file.seekg(offset, ios_base::beg);
 		char* buffer = new char[page_size];
+		memset(buffer, 0, page_size);
 		index_file.read(buffer, page_size);
 
 		auto data = (uint64_t*) buffer;
@@ -94,8 +100,17 @@ public:
 	index(const std::string& file_name) :
 			page_size(8192) {
 		index_file.open(file_name,
-				std::ios::in | std::ios::out |
-				std::ios::binary | std::ios::app);
+				std::ios::in | std::ios::out | std::ios::binary);
+		if (!index_file) {
+			// The file doesn't exist. Open the file in out-only mode to create
+			// it, then close the file and re-open in/out mode.
+			index_file.clear();
+			index_file.open(file_name, std::ios::out | std::ios::binary);
+			index_file.close();
+			index_file.clear();
+			index_file.open(file_name,
+					std::ios::in | std::ios::out | std::ios::binary);
+		}
 
 		index_file.seekg(0, ios_base::end);
 		auto end_of_file = index_file.tellg();
@@ -130,7 +145,6 @@ public:
 
 		uint64_t *data = _get_index_page(page);
 		auto page_offset = (pos - page) / sizeof(uint64_t);
-
 		data[page_offset] = offset;
 	}
 
