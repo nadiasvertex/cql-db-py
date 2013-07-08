@@ -25,6 +25,7 @@
  */
 
 namespace cql {
+namespace datafile {
 
 struct entry_position {
 private:
@@ -150,6 +151,7 @@ public:
 
 };
 
+}
 }
 
 #endif /* INDEX_H_ */
