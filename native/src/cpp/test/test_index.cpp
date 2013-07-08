@@ -1,5 +1,5 @@
 /*
- * test_mq.cpp
+ * test_index.cpp
  *
  *  Created on: Jun 28, 2013
  *      Author: Christopher Nelson
