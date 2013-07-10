@@ -47,6 +47,10 @@ public:
 				&& column_index.is_open();
 	}
 
+	uint64_t count() {
+		return write_store.size();
+	}
+
 	void put(const uint64_t column, const T& v) {
 		auto it = write_store.find(v);
 		if (it == write_store.end()) {
@@ -77,6 +81,10 @@ public:
 		}
 
 		it->second.emplace_back(column_segment { column, column });
+	}
+
+	void get(const uint64_t column) {
+
 	}
 
 };
