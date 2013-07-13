@@ -37,27 +37,43 @@ TEST(StoreTest, CanWriteDuplicates) {
 
 	ASSERT_TRUE(st.is_open());
 
-	for (int j = 0; j < test_reps/10; j++) {
-		for (int i = 0; i < test_reps/10; i++) {
+	for (int j = 0; j < test_reps / 10; j++) {
+		for (int i = 0; i < test_reps / 10; i++) {
 			st.put(i, j);
 		}
 	}
 
-	ASSERT_EQ(test_reps/10, st.count());
+	ASSERT_EQ(test_reps / 10, st.count());
 }
 
-/*TEST(StoreTest, CanRead) {
- cql::datafile::store<int> st("test");
+TEST(StoreTest, CanReadMemoryByColumn) {
+	cql::datafile::store<int> st("test");
 
- for (int i = 0; i < test_reps; i++) {
- auto pos = cql::datafile::entry_position::from_uint64(i);
- st.put_entry_offset(pos, i * 100);
- }
+	for (int i = 0; i < test_reps; i++) {
+		st.put(i, i * 1000);
+	}
 
- for (int i = 0; i < test_reps; i++) {
- auto pos = cql::datafile::entry_position::from_uint64(i);
- auto offset = st.get_entry_offset(pos);
+	for (int i = 0; i < test_reps; i++) {
+		auto r = st.get(i);
 
- ASSERT_EQ(i*100, offset);
- }
- }*/
+		ASSERT_TRUE(get < 0 > (r));
+		ASSERT_EQ(i * 1000, get < 1 > (r));
+	}
+}
+
+TEST(StoreTest, CanSlowReadMemoryByColumn) {
+	cql::datafile::store<int> st("test");
+
+	st.set_use_fast_column_lookup(false);
+
+	for (int i = 0; i < test_reps; i++) {
+		st.put(i, i * 1000);
+	}
+
+	for (int i = 0; i < test_reps; i++) {
+		auto r = st.get(i);
+
+		ASSERT_TRUE(get < 0 > (r));
+		ASSERT_EQ(i * 1000, get < 1 > (r));
+	}
+}

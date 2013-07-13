@@ -8,6 +8,7 @@
 #ifndef CQL_DATAFILE_STORE_H_
 #define CQL_DATAFILE_STORE_H_
 
+#include <functional>
 #include <list>
 #include <map>
 #include <string>
@@ -20,12 +21,16 @@ namespace datafile {
 
 template<typename T>
 class store {
+public:
+	typedef std::function<bool(const T&)> predicate_t;
 
 	struct column_segment {
 		uint64_t start, end;
 	};
 
+private:
 	typedef std::map<T, std::list<column_segment> > write_store_t;
+	typedef std::map<uint64_t, T> fast_column_lookup_t;
 
 	value<T> values;
 	index value_index;
@@ -34,11 +39,15 @@ class store {
 	index column_index;
 
 	write_store_t write_store;
+	fast_column_lookup_t column_lookup;
+
+	bool use_fast_column_lookup;
 
 public:
 	store(const std::string& filename) :
 			value_index(filename + ".idx"), values(filename + ".dat"), column_index(
-					filename + ".column.idx"), columns(filename + ".column.dat") {
+					filename + ".column.idx"), columns(
+					filename + ".column.dat"), use_fast_column_lookup(true) {
 
 	}
 
@@ -51,18 +60,30 @@ public:
 		return write_store.size();
 	}
 
+	void set_use_fast_column_lookup(bool _use_fast_column_lookup) {
+		if (_use_fast_column_lookup == false) {
+			column_lookup.clear();
+		}
+
+		use_fast_column_lookup = _use_fast_column_lookup;
+	}
+
 	void put(const uint64_t column, const T& v) {
+		if (use_fast_column_lookup) {
+			column_lookup[column] = v;
+		}
+
 		auto it = write_store.find(v);
 		if (it == write_store.end()) {
-			auto result = write_store.insert(std::make_pair(v, std::list<column_segment>()));
+			auto result = write_store.insert(
+					std::make_pair(v, std::list<column_segment>()));
 			auto& l = result.first->second;
 			l.emplace_back(column_segment { column, column });
 			return;
 		}
 
 		// Traverse the list of segments and merge this column into the list
-		for (auto it_s = it->second.begin(); it_s != it->second.end();
-				it_s++) {
+		for (auto it_s = it->second.begin(); it_s != it->second.end(); it_s++) {
 			auto& segment = *it_s;
 			if (column == segment.start - 1) {
 				segment.start--;
@@ -83,10 +104,36 @@ public:
 		it->second.emplace_back(column_segment { column, column });
 	}
 
-	void get(const uint64_t column) {
+	std::tuple<bool, T> get(const uint64_t column) {
+		// Use fast lookup for this column.
+		if (use_fast_column_lookup) {
+			auto it = column_lookup.find(column);
+			if (it == column_lookup.end()) {
+				return std::make_tuple(false, T { });
+			}
+			return std::make_tuple(true, it->second);
+		}
 
+		// Slow walk the whole map and find the column.
+		for (auto it : write_store) {
+			for (auto s_it : it.second) {
+				// Early out of the segment search.
+				if (s_it.start > column) {
+					break;
+				}
+
+				if (column>=s_it.start && column<=s_it.end) {
+					return std::make_tuple(true, it.first);
+				}
+			}
+		}
+
+		return std::make_tuple(false, T { });
 	}
 
+	std::vector<column_segment> get(predicate_t pred) {
+
+	}
 };
 
 }
