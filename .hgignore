@@ -9,4 +9,7 @@ test_*.db
 test_*.rle
 test_*.values
 cql_tests
+.sconsign.dblite
+.settings/language.settings.xml
+clang
 
