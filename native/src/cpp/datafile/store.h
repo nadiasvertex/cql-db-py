@@ -34,28 +34,40 @@ private:
 	typedef std::map<T, std::list<column_segment> > write_store_t;
 	typedef std::map<uint64_t, T> fast_column_lookup_t;
 
-	value<T> values;
-	index value_index;
-
-	value<uint64_t> columns;
-	index column_index;
+	typedef std::vector<value<T>> value_list_t;
+	typedef std::vector<value<uint64_t>> column_list_t;
+	typedef std::vector<index> index_list_t;
 
 	write_store_t write_store;
 	fast_column_lookup_t column_lookup;
 
 	bool use_fast_column_lookup;
 
-public:
-	store(const std::string& filename) :
-			value_index(filename + ".idx"), values(filename + ".dat"), column_index(
-					filename + ".column.idx"), columns(
-					filename + ".column.dat"), use_fast_column_lookup(true) {
+	std::string base_filename;
+
+private:
+	/**
+	 * Flushes the current write store to disk. The write store is pre-sorted
+	 * and dumped into a disk-segment.
+	 */
+	void _create_new_disk_segment() {
 
 	}
 
+	/**
+	 * Find existing disk segments.
+	 */
+	void _find_disk_segments() {
+
+	}
+
+public:
+	store(const std::string& filename) :
+			base_filename(filename), use_fast_column_lookup(true) {
+	}
+
 	bool is_open() {
-		return values.is_open() && value_index.is_open() && columns.is_open()
-				&& column_index.is_open();
+		return true;
 	}
 
 	uint64_t count() {
@@ -133,6 +145,16 @@ public:
 		return std::make_tuple(false, T { });
 	}
 
+	/**
+	 * Fetches the list of column ids that match the given predicate.
+	 *
+	 * :param pred: The predicate function.
+	 *
+	 * :returns: A list of segments of columns that match. The segments will not
+	 * 			 overlap, but their is no guarantee that that the segments will
+	 * 			 be optimally run-length compressed.
+	 *
+	 */
 	std::vector<column_segment> get(predicate_t pred) {
 		std::vector<column_segment> columns;
 
@@ -147,6 +169,16 @@ public:
 		return columns;
 	}
 
+	/**
+	 * Performs aggregation of the column values. The aggregation function is
+	 * specified by the user.
+	 *
+	 * :param aggr: The aggregation function. This function takes the value,
+	 * 				the aggregate value, and a count of the number of columns
+	 * 				with the given value.
+	 *
+	 * :returns: The aggregate value.
+	 */
 	T aggregate(aggregate_t aggr) {
 		T agg { };
 
