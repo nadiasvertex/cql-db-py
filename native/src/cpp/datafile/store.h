@@ -8,6 +8,7 @@
 #ifndef CQL_DATAFILE_STORE_H_
 #define CQL_DATAFILE_STORE_H_
 
+#include <algorithm>
 #include <functional>
 #include <list>
 #include <map>
@@ -23,6 +24,7 @@ template<typename T>
 class store {
 public:
 	typedef std::function<bool(const T&)> predicate_t;
+	typedef std::function<void(const T&, T&, uint64_t)> aggregate_t;
 
 	struct column_segment {
 		uint64_t start, end;
@@ -122,7 +124,7 @@ public:
 					break;
 				}
 
-				if (column>=s_it.start && column<=s_it.end) {
+				if (column >= s_it.start && column <= s_it.end) {
 					return std::make_tuple(true, it.first);
 				}
 			}
@@ -132,7 +134,31 @@ public:
 	}
 
 	std::vector<column_segment> get(predicate_t pred) {
+		std::vector<column_segment> columns;
 
+		for (auto it : write_store) {
+			if (pred(it.first)) {
+				for (auto& s_it : it.second) {
+					columns.push_back(s_it);
+				}
+			}
+		}
+
+		return columns;
+	}
+
+	T aggregate(aggregate_t aggr) {
+		T agg { };
+
+		for (auto it : write_store) {
+			uint64_t count = 0;
+			for(auto s_it : it.second) {
+				count += (s_it.end - s_it.start) + 1;
+			}
+			aggr(it.first, agg, count);
+		}
+
+		return agg;
 	}
 };
 
