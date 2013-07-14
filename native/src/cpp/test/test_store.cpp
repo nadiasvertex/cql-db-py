@@ -77,3 +77,57 @@ TEST(StoreTest, CanSlowReadMemoryByColumn) {
 		ASSERT_EQ(i * 1000, get < 1 > (r));
 	}
 }
+
+TEST(StoreTest, CanPredicateMatch) {
+	cql::datafile::store<int> st("test");
+
+	for (int i = 0; i < test_reps; i++) {
+		st.put(i, i * 1000);
+	}
+
+	auto p1 = [](int value)-> bool {return value < ((test_reps/2)*1000);};
+	auto r1 = st.get(p1);
+
+	ASSERT_EQ(test_reps / 2, r1.size());
+
+	auto p2 = [](int value)-> bool {return value > ((test_reps/2)*1000);};
+	auto r2 = st.get(p2);
+
+	ASSERT_EQ((test_reps / 2) - 1, r2.size());
+}
+
+TEST(StoreTest, CanSum) {
+	cql::datafile::store<int> st("test");
+
+	int sum1 = 0;
+	for (int i = 0; i < test_reps; i++) {
+		st.put(i, i * 1000);
+		sum1 += i * 1000;
+	}
+
+	auto p1 =
+			[](const int& value, int& sum, uint64_t count) {sum += (value*count);};
+	auto r1 = st.aggregate(p1);
+
+	ASSERT_EQ(sum1, r1);
+}
+
+TEST(StoreTest, CanSumDuplicates) {
+	cql::datafile::store<int> st("test");
+
+	ASSERT_TRUE(st.is_open());
+
+	int sum1 = 0;
+	for (int j = 0; j < test_reps / 10; j++) {
+		for (int i = 0; i < test_reps / 10; i++) {
+			st.put(i, j);
+			sum1 += j;
+		}
+	}
+
+	auto p1 =
+			[](const int& value, int& sum, uint64_t count) {sum += (value*count);};
+	auto r1 = st.aggregate(p1);
+
+	ASSERT_EQ(sum1, r1);
+}
