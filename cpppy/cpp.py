@@ -70,12 +70,24 @@ class CppIndex:
       c.write("#include <Python.h>\n\n")
       for m in self.marks:
         methods = self.find_methods(m)
+        
+        # Write out method thunking bodies
         for method in methods:
           c.write("static PyObject * %s_%s(PyObject* self, PyObject* args) {\n" % (m.spelling, method.spelling))
           self.generate_args(c, method)
           c.write("}\n\n")
+          
+        # Write out method lists.
+        c.write("static PyMethodDef %s_methods[] = {\n" % m.spelling)
+        for method in methods:
+          c.write('\t{"%s", %s_%s, METH_VARARGS, nullptr},\n' % (method.spelling, m.spelling, method.spelling))
+        c.write("\t{nullptr, nullptr, 0, nullptr}\n};\n\n")
+           
         
-      
+        c.write('PyMODINIT_FUNC init%s(void) {\n' % (m.spelling,))      
+        c.write('\tPyObject *m = Py_InitModule("%s", %s_methods);\n' % (m.spelling,m.spelling,))
+        c.write('\tif (m==nullptr) { return; }\n')
+        c.write('}\n')
   
 
 if __name__ == "__main__":
