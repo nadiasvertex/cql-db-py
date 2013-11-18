@@ -69,7 +69,7 @@ class CppIndex:
     with open("module.cpp", "w") as c:
       c.write("#include <Python.h>\n\n")
       for m in self.marks:
-        methods = self.find_methods(m)
+        methods = [md for md in self.find_methods(m) if md.access == 1]
         
         # Write out method thunking bodies
         for method in methods:
