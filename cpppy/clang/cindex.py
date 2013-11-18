@@ -1313,6 +1313,12 @@ class Cursor(Structure):
         occupy the extent this cursor occupies.
         """
         return TokenGroup.get_tokens(self._tu, self.extent)
+        
+    @property
+    def access(self):
+        """Find out the C++ access specified for this object."""
+        return conf.lib.clang_getCXXAccessSpecifier(self)
+        
 
     def is_bitfield(self):
         """
