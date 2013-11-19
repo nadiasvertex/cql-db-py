@@ -8,7 +8,7 @@ static PyTypeObject {typename}_type = {{
     "{modname}.{typename}",       /*tp_name*/
     sizeof({typename}_object),    /*tp_basicsize*/
     0,                            /*tp_itemsize*/
-    0,                            /*tp_dealloc*/
+    (destructor){typename}_dealloc,           /*tp_dealloc*/
     0,                            /*tp_print*/
     0,                            /*tp_getattr*/
     0,                            /*tp_setattr*/
@@ -39,8 +39,8 @@ static PyTypeObject {typename}_type = {{
     0,                            /* tp_descr_get */
     0,                            /* tp_descr_set */
     0,                            /* tp_dictoffset */
-    0,                            /* tp_init */
-    0,                            /* tp_alloc */
+    (initproc){typename}_init,    /* tp_init */
+    {typename}_alloc,             /* tp_alloc */
     0                             /* tp_new */
 }};
 """
@@ -70,6 +70,30 @@ type_append = """
    PyModule_AddObject(m, "{typename}", (PyObject*)&{typename}_type);
 """
 
+type_init_func = """
+static int 
+{typename}_init({typename}_object* self, PyObject* args, PyObject* kwds) {{
+   self->native_object = std::make_shared<{native_typename}>();
+   return 0;
+}}
+"""
+
+type_alloc_func = """
+static PyObject* 
+{typename}_alloc(PyTypeObject* type, Py_ssize_t nitems) {{
+   {typename}_object* o = new {typename}_object{{}};
+   o->ob_refcnt = 1;
+   o->ob_type = type;
+   return (PyObject*)o;
+}}
+"""
+
+type_dealloc_func = """
+static void 
+{typename}_dealloc({typename}_object* self) {{
+   delete self;
+}}
+"""
 
 arg_map = {
   cindex.TypeKind.BOOL : "b",
@@ -179,9 +203,17 @@ class CppIndex:
                )
             c.write("\t{nullptr, nullptr, 0, nullptr}\n};\n\n")
             
+            # Write out the custom type management functions.
+            c.write(type_init_func.format(typename=type_name,
+                                          native_typename=native_type_name))
+            c.write(type_alloc_func.format(typename=type_name,
+                                          native_typename=native_type_name))
+            c.write(type_dealloc_func.format(typename=type_name,
+                                          native_typename=native_type_name))
+            
             # Write out Python mapping for custom type.
             c.write(custom_type.format(modname=module_name, 
-                                       typename=type_name))  
+                                       typename=type_name))
                
             type_initializers.append(type_init.format(typename=type_name))
             type_appenders.append(type_append.format(typename=type_name))
