@@ -26,6 +26,9 @@ public:
 	typedef std::function<bool(const T&)> predicate_t;
 	typedef std::function<void(const T&, T&, uint64_t)> aggregate_t;
 
+	/**
+	 * A column segment maps row ids to a particular row value for this column.
+	 */
 	struct column_segment {
 		uint64_t start, end;
 	};
@@ -82,9 +85,9 @@ public:
 		use_fast_column_lookup = _use_fast_column_lookup;
 	}
 
-	void put(const uint64_t column, const T& v) {
+	void put(const uint64_t row_id, const T& v) {
 		if (use_fast_column_lookup) {
-			column_lookup[column] = v;
+			column_lookup[row_id] = v;
 		}
 
 		auto it = write_store.find(v);
@@ -92,51 +95,51 @@ public:
 			auto result = write_store.insert(
 					std::make_pair(v, std::list<column_segment>()));
 			auto& l = result.first->second;
-			l.emplace_back(column_segment { column, column });
+			l.emplace_back(column_segment { row_id, row_id });
 			return;
 		}
 
-		// Traverse the list of segments and merge this column into the list
+		// Traverse the list of segments and merge this row_id into the list
 		for (auto it_s = it->second.begin(); it_s != it->second.end(); it_s++) {
 			auto& segment = *it_s;
-			if (column == segment.start - 1) {
+			if (row_id == segment.start - 1) {
 				segment.start--;
 				return;
 			}
 
-			if (column == segment.end + 1) {
+			if (row_id == segment.end + 1) {
 				segment.end++;
 				return;
 			}
 
-			if (segment.start > column) {
-				it->second.emplace(it_s, column_segment { column, column });
+			if (segment.start > row_id) {
+				it->second.emplace(it_s, column_segment { row_id, row_id });
 				return;
 			}
 		}
 
-		it->second.emplace_back(column_segment { column, column });
+		it->second.emplace_back(column_segment { row_id, row_id });
 	}
 
-	std::tuple<bool, T> get(const uint64_t column) {
-		// Use fast lookup for this column.
+	std::tuple<bool, T> get(const uint64_t row_id) {
+		// Use fast lookup for this row_id.
 		if (use_fast_column_lookup) {
-			auto it = column_lookup.find(column);
+			auto it = column_lookup.find(row_id);
 			if (it == column_lookup.end()) {
 				return std::make_tuple(false, T { });
 			}
 			return std::make_tuple(true, it->second);
 		}
 
-		// Slow walk the whole map and find the column.
+		// Slow walk the whole map and find the row_id.
 		for (auto it : write_store) {
 			for (auto s_it : it.second) {
 				// Early out of the segment search.
-				if (s_it.start > column) {
+				if (s_it.start > row_id) {
 					break;
 				}
 
-				if (column >= s_it.start && column <= s_it.end) {
+				if (row_id >= s_it.start && row_id <= s_it.end) {
 					return std::make_tuple(true, it.first);
 				}
 			}
@@ -146,12 +149,12 @@ public:
 	}
 
 	/**
-	 * Fetches the list of column ids that match the given predicate.
+	 * Fetches the list of row ids that match the given predicate.
 	 *
 	 * :param pred: The predicate function.
 	 *
-	 * :returns: A list of segments of columns that match. The segments will not
-	 * 			 overlap, but their is no guarantee that that the segments will
+	 * :returns: A list of column segments that match. The segments will not
+	 * 			 overlap, but there is no guarantee that that the segments will
 	 * 			 be optimally run-length compressed.
 	 *
 	 */

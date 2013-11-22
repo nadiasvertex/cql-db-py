@@ -11,5 +11,4 @@ env = Environment(CXX="clang++",
 env['ENV']['TERM'] = os.environ['TERM']
 env['ENV']['PATH'] = os.environ['PATH']
 
-
 env.Program(target="cql_tests", source=test_code)
