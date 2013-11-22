@@ -4,9 +4,13 @@ Created on Nov 21, 2013
 @author: Christopher Nelson
 '''
 
+from cStringIO import StringIO
+
 import logging
 import os
+import select
 import subprocess
+
 
 # The path to the storage engine. This is where we keep on-disk, persistent
 # storage for our archives.
@@ -60,6 +64,8 @@ class Warehouse():
       
       if not os.path.exists(self.storage_path):
          self.create()
+      else:
+         self._set_properties()
          
       if not start_immediately:
          return
@@ -85,16 +91,35 @@ class Warehouse():
          cmd = [warehouse_controller, 
                 operation, self.storage_path]
       
-      try:
-         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-      except Exception, e:
-         msg = "Unable to run command: '%s' -> %s" % (" ".join(cmd), e.output)
-         logging.exception(msg)
-         raise e
+   
+      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+      out = StringIO()
+      err = StringIO()
+      poll = select.poll()
+      poll.register(p.stdout)
+      poll.register(p.stderr)
+      while p.poll() == None:
+         ready = poll.poll(250)
+         for fd, event in ready:
+            if fd == p.stdout.fileno():
+               out.write(p.stdout.read())
+            else:
+               err.write(p.stderr.read())
       
-      logging.debug("'%s' -> %s", (" ".join(cmd), output))
+      out=out.getvalue()
+      err=err.getvalue()
+      if p.returncode!=0:
+         msg = "Unable to run command: '%s'" % (" ".join(cmd))
+         logging.error(msg)
+         logging.debug(out)
+         logging.error(err)
+         raise subprocess.CalledProcessError(p.returncode, cmd, out)
       
-      return output
+      logging.debug("'%s'", " ".join(cmd))
+      if out: logging.debug(out)
+      if err: logging.error(err)
+      
+      return out
       
    def destroy(self):
       """
@@ -104,7 +129,7 @@ class Warehouse():
       if self.started:
          self.stop()
       
-      logging.info("Destroying warehouse at '%s'", (self.storage_path,))
+      logging.info("Destroying warehouse at '%s'", self.storage_path)
       for dirpath, dirnames, filenames in os.walk(self.storage_path, False):
          for filename in filenames:
             os.unlink(os.path.join(dirpath, filename))
@@ -113,6 +138,13 @@ class Warehouse():
          
       os.removedirs(self.storage_path)   
                
+
+   def _set_properties(self):
+      for prop in ["passphrase=" + self.passphrase, "control=yes", 
+         "discovery=yes", 
+         "port=%d" % self.port]:
+         self._control_warehouse("set", prop)
+
    def create(self):
       """
       Creates a warehouse. If the specified location already exists, it will
@@ -126,32 +158,29 @@ class Warehouse():
       if os.path.exists(self.storage_path):
          self.destroy()
       
-      logging.info("Creating warehouse at '%s'", (self.storage_path,))
+      logging.info("Creating warehouse at '%s'", self.storage_path)
       self._control_warehouse("create")
-      for property in ["passphrase="+self.passphrase,
-                       "control=yes",
-                       "discovery=yes",
-                       "port=%d" % self.port]:
-         self._control_warehouse("set", property)
+      self._set_properties()
       
-   def set(self, property, value):
+   def set(self, prop, value):
       """
-      Sets the value of property.
+      Sets the value of prop.
       
-      @param property: The property to set.
+      @param prop: The property to set.
       @param value: The value to set it to.    
       """
-      self._control_warehouse("set", property+"="+value)
+      logging.debug("Setting property %s=%s", prop, value)
+      self._control_warehouse("set", prop+"="+value)
       
-   def get(self, property):
+   def get(self, prop):
       """
-      Gets the value of property.
+      Gets the value of prop.
       
-      @param property: The property to get, or 'all' to get all properties.
+      @param prop: The property to get, or 'all' to get all properties.
       
       @returns: A dictionary mapping the properties to their values.
       """
-      output = self._control_warehouse("get", property).splitlines()[1:]
+      output = self._control_warehouse("get", prop).splitlines()[1:]
       return dict([line.split(" ", 1) for line in output])
       
       
@@ -163,7 +192,7 @@ class Warehouse():
       if self.started:
          return
       
-      logging.info("Starting warehouse at '%s'", (self.storage_path,))
+      logging.info("Starting warehouse at '%s'", self.storage_path)
       
       self._control_warehouse("start")
       self.started = True
@@ -176,13 +205,13 @@ class Warehouse():
       if not self.started:
          return
       
-      logging.info("Stopping warehouse at '%s'", (self.storage_path,))
+      logging.info("Stopping warehouse at '%s'", self.storage_path)
       
       self._control_warehouse("stop")
       self.started = False  
 
 if __name__ == "__main__":
    logging.basicConfig(level=logging.DEBUG)
-   w = Warehouse("/tmp/test_warehouse", "letmein")
+   w = Warehouse("/tmp/test_warehouse", "letmein", port=60000)
    w.stop()
    w.destroy()
