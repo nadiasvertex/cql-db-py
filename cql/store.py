@@ -98,13 +98,20 @@ class Warehouse():
       poll = select.poll()
       poll.register(p.stdout)
       poll.register(p.stderr)
+      
+      fd_map = {
+         p.stdout.fileno() : (p.stdout, out),
+         p.stderr.fileno() : (p.stderr, err),
+      }
+      
       while p.poll() == None:
          ready = poll.poll(250)
          for fd, event in ready:
-            if fd == p.stdout.fileno():
-               out.write(p.stdout.read())
-            else:
-               err.write(p.stderr.read())
+            if event != select.POLLIN:
+               continue
+            
+            h, stream = fd_map[fd]
+            stream.write(h.read())
       
       out=out.getvalue()
       err=err.getvalue()
