@@ -16,6 +16,44 @@ import subprocess
 # storage for our archives.
 storage_engine_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'storage_engine')
 warehouse_controller = os.path.join(storage_engine_path, "bin", "monetdbd")
+database_controller = os.path.join(storage_engine_path, "bin", "monetdb")
+
+def run_command(cmd):
+   p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+   out = StringIO()
+   err = StringIO()
+   poll = select.poll()
+   poll.register(p.stdout)
+   poll.register(p.stderr)
+   
+   fd_map = {
+      p.stdout.fileno() : (p.stdout, out),
+      p.stderr.fileno() : (p.stderr, err),
+   }
+   
+   while p.poll() == None:
+      ready = poll.poll(250)
+      for fd, event in ready:
+         if event != select.POLLIN:
+            continue
+         
+         h, stream = fd_map[fd]
+         stream.write(h.read())
+   
+   out = out.getvalue()
+   err = err.getvalue()
+   if p.returncode != 0:
+      msg = "Unable to run command: '%s'" % (" ".join(cmd))
+      logging.error(msg)
+      logging.debug(out)
+      logging.error(err)
+      raise subprocess.CalledProcessError(p.returncode, cmd, out)
+   
+   logging.debug("'%s'", " ".join(cmd))
+   if out: logging.debug(out)
+   if err: logging.error(err)
+   
+   return out
 
 class Warehouse():
    """
@@ -84,49 +122,14 @@ class Warehouse():
                        zero or one arguments.
       """
       if arg:
-         cmd = [warehouse_controller, 
+         cmd = [warehouse_controller,
                 operation, arg,
                 self.storage_path]
       else:
-         cmd = [warehouse_controller, 
+         cmd = [warehouse_controller,
                 operation, self.storage_path]
       
-   
-      p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-      out = StringIO()
-      err = StringIO()
-      poll = select.poll()
-      poll.register(p.stdout)
-      poll.register(p.stderr)
-      
-      fd_map = {
-         p.stdout.fileno() : (p.stdout, out),
-         p.stderr.fileno() : (p.stderr, err),
-      }
-      
-      while p.poll() == None:
-         ready = poll.poll(250)
-         for fd, event in ready:
-            if event != select.POLLIN:
-               continue
-            
-            h, stream = fd_map[fd]
-            stream.write(h.read())
-      
-      out=out.getvalue()
-      err=err.getvalue()
-      if p.returncode!=0:
-         msg = "Unable to run command: '%s'" % (" ".join(cmd))
-         logging.error(msg)
-         logging.debug(out)
-         logging.error(err)
-         raise subprocess.CalledProcessError(p.returncode, cmd, out)
-      
-      logging.debug("'%s'", " ".join(cmd))
-      if out: logging.debug(out)
-      if err: logging.error(err)
-      
-      return out
+      return run_command(cmd)
       
    def destroy(self):
       """
@@ -147,8 +150,8 @@ class Warehouse():
                
 
    def _set_properties(self):
-      for prop in ["passphrase=" + self.passphrase, "control=yes", 
-         "discovery=yes", 
+      for prop in ["passphrase=" + self.passphrase, "control=yes",
+         "discovery=yes",
          "port=%d" % self.port]:
          self._control_warehouse("set", prop)
 
@@ -177,7 +180,7 @@ class Warehouse():
       @param value: The value to set it to.    
       """
       logging.debug("Setting property %s=%s", prop, value)
-      self._control_warehouse("set", prop+"="+value)
+      self._control_warehouse("set", prop + "=" + value)
       
    def get(self, prop):
       """
@@ -217,8 +220,101 @@ class Warehouse():
       self._control_warehouse("stop")
       self.started = False  
 
+class Database():
+   def __init__(self, warehouse, dbname, hostname="localhost", 
+                start_immediately=True, initialize=True):
+      self.warehouse = warehouse
+      self.dbname = dbname
+      self.hostname = hostname
+      
+      if not initialize:
+         return
+      
+      if not self.exists():
+         self.create()
+      
+   def _control_database(self, operation, args=[], no_database=False):
+      """
+      Controls a database in a given warehouse.
+      
+      @param operation: The operation to run. Must be one of create, destroy, 
+                        lock, release, status, start, stop, kill, set, get,
+                        inherit, discover, and version
+                        
+      @param args:      The arguments for the operation. These vary based on the
+                        operation being performed.
+      """
+      cmd = [database_controller,
+             "-h", self.hostname,
+             "-p", str(self.warehouse.port),
+             "-P", self.warehouse.passphrase,
+             "-q",
+             operation] + args
+             
+      if not no_database:
+         cmd += ["database", self.dbname]
+
+      return run_command(cmd)
+   
+   def exists(self):
+      stat = self.status(all_databases=True)
+      if not stat:
+         return False
+      
+      return True
+      
+   def status(self, mode="simple", all_databases=False):
+      """
+      Provides status information about this database, or if all_databases is
+      set to True all databases in this warehouse.
+      
+      @param mode: The status mode. This may be 'simple', 'common', 
+                   or 'complete'. 
+      @param all_databases: Whether to return status information for all
+                  databases, or just this database.
+      
+      @returns: A list of dictionaries, one for each database with the
+                properties as keys.
+      """
+      if mode == "common":
+         args = ["-c"]
+      elif mode == "complete":
+         args = ["-l"]
+      else:
+         args = []
+         
+      output = self._control_database("status", args, no_database=not all_databases)
+      if not output:
+         return []
+      
+      if mode == "simple":
+         values = []
+         lines = output.splitlines()
+         names = lines[0].split(" ", 4)
+         for line in lines[1:]:
+            values.append(dict(zip(names, line.split(" ", 4))))
+            
+         return values
+            
+   def create(self):
+      self._control_database("create")
+      
+   def destroy(self):
+      self._control_database("destroy", ["-f"])
+      
+   def stop(self):
+      self._control_database("stop")
+      
+   def start(self):
+      self._control_database("stop")
+      
+
 if __name__ == "__main__":
    logging.basicConfig(level=logging.DEBUG)
    w = Warehouse("/tmp/test_warehouse", "letmein", port=60000)
+   db = Database(w, "testdb")
+   db.status()
+   db.stop()
+   db.destroy()
    w.stop()
    w.destroy()
