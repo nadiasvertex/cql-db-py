@@ -10,7 +10,7 @@ import logging
 import os
 import select
 import subprocess
-
+import sys
 
 # The path to the storage engine. This is where we keep on-disk, persistent
 # storage for our archives.
@@ -19,6 +19,9 @@ storage_engine_path = os.path.join(os.path.abspath(os.path.dirname(__file__)),
 warehouse_controller = os.path.join(storage_engine_path, "bin", "monetdbd")
 database_controller = os.path.join(storage_engine_path, "bin", "monetdb")
 
+sys.path.append(os.path.join(storage_engine_path, "lib", "python2.7",
+                             "site-packages"))
+from monetdb import mapi
 
 def run_command(cmd):
    if not cmd:
@@ -338,6 +341,19 @@ class Database():
    def start(self):
       self._control_database("start")
 
+   def connect(self, username="monetdb", password="monetdb", language="sql"):
+      """
+      :param username: The username to connect as.
+      :param password: The password to authenticate with.
+      :param language:  The language to use for queries. Must be one of 'sql',
+                        'jaql', 'msql', or 'mal'.
+      :return: A connection object ready for use.
+      """
+      c = mapi.Connection()
+      c.connect(self.hostname, self.warehouse.port, username, password,
+                self.db_name, language)
+
+      return c
 
 if __name__ == "__main__":
    logging.basicConfig(level=logging.DEBUG)
@@ -346,6 +362,10 @@ if __name__ == "__main__":
    db.status()
    db.status(mode="common")
    db.status(mode="complete")
+   con = db.connect()
+   print con.cmd("sCREATE TABLE test_table(id bigint);")
+   print con.cmd("sINSERT INTO test_table VALUES(1), (2), (3);")
+   print con.cmd("sSELECT * FROM test_table;")
    db.stop()
    db.destroy()
    w.stop()
