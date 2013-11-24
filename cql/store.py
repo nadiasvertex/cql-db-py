@@ -21,7 +21,7 @@ database_controller = os.path.join(storage_engine_path, "bin", "monetdb")
 
 sys.path.append(os.path.join(storage_engine_path, "lib", "python2.7",
                              "site-packages"))
-from monetdb import mapi
+from monetdb import sql
 
 def run_command(cmd):
    if not cmd:
@@ -341,31 +341,29 @@ class Database():
    def start(self):
       self._control_database("start")
 
-   def connect(self, username="monetdb", password="monetdb", language="sql"):
+   def connect(self, username="monetdb", password="monetdb"):
       """
       :param username: The username to connect as.
       :param password: The password to authenticate with.
-      :param language:  The language to use for queries. Must be one of 'sql',
-                        'jaql', 'msql', or 'mal'.
       :return: A connection object ready for use.
       """
-      c = mapi.Connection()
-      c.connect(self.hostname, self.warehouse.port, username, password,
-                self.db_name, language)
-
-      return c
+      return  sql.Connection(hostname=self.hostname, port=self.warehouse.port,
+                username=username, password=password,
+                database=self.db_name)
 
 if __name__ == "__main__":
    logging.basicConfig(level=logging.DEBUG)
-   w = Warehouse("/tmp/test_warehouse", "letmein", port=60000)
+   w = Warehouse("/tmp/test_warehouse", "letmein", port=60001)
    db = Database(w, "testdb")
    db.status()
    db.status(mode="common")
    db.status(mode="complete")
    con = db.connect()
-   print con.cmd("sCREATE TABLE test_table(id bigint);")
-   print con.cmd("sINSERT INTO test_table VALUES(1), (2), (3);")
-   print con.cmd("sSELECT * FROM test_table;")
+   cur = con.cursor()
+   print cur.execute("CREATE TABLE test_table(id bigint)")
+   print cur.execute("INSERT INTO test_table VALUES(1), (2), (3)")
+   print cur.execute("SELECT * FROM test_table")
+   print cur.fetchall()
    db.stop()
    db.destroy()
    w.stop()
