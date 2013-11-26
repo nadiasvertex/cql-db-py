@@ -11,6 +11,10 @@ pred_map = {
    "lte" : "<=",
    "gte" : ">="
 }
+
+ENGINE_SQLITE3 = 0
+ENGINE_MONETDB = 1
+
 def convert_to_sqlite3(value):
    t = type(value)
    if t in types.StringTypes:
@@ -25,30 +29,66 @@ def convert_to_monetdb(value):
    if t in (types.IntType, types.LongType, types.FloatType):
       return str(value)
 
+def convert_to_sql(value, engine):
+   if engine==ENGINE_SQLITE3:
+      return convert_to_sqlite3(value)
+   else:
+      return convert_to_monetdb(value)
+
 class Expression(object):
    def __init__(self, left, op, right):
       self.left = left
       self.op = op
       self.right = right
 
-   def gen(self):
+   def gen(self, engine):
       s = StringIO()
       if isinstance(self.left, Expression):
-         s.write(self.left.gen())
+         s.write(self.left.gen(engine))
       else:
-         s.write(convert_to_sqlite3(self.left))
+         s.write(convert_to_sql(self.left, engine))
       s.write(self.op)
       if isinstance(self.right, Expression):
-         s.write(self.right.gen())
+         s.write(self.right.gen(engine))
       else:
-         s.write(convert_to_sqlite3(self.right))
+         s.write(convert_to_sql(self.right, engine))
 
       return s.getvalue()
+
+   def __or__(self, other):
+      return BooleanExpression(self, "OR", other)
+
+   def __and__(self, other):
+      return BooleanExpression(self, "AND", other)
+
+
+class BooleanExpression(Expression):
+   def __init__(self, left, op, right):
+      Expression.__init__(self, left, op, right)
+
+   def gen(self, engine):
+      s = StringIO()
+      s.write("(")
+      if isinstance(self.left, Expression):
+         s.write(self.left.gen(engine))
+      else:
+         s.write(convert_to_sql(self.left, engine))
+      s.write(") ")
+      s.write(self.op)
+      s.write(" (")
+      if isinstance(self.right, Expression):
+         s.write(self.right.gen(engine))
+      else:
+         s.write(convert_to_sql(self.right, engine))
+      s.write(")")
+      return s.getvalue()
+
 
 class FieldNameExpression(Expression):
    def __init__(self, name):
       self.name = name
-   def gen(self):
+
+   def gen(self, engine):
       return self.name
 
 class Field(object):
@@ -100,8 +140,7 @@ class Field(object):
       return Expression(FieldNameExpression(self.name), ">=", other)
    def __le__(self, other):
       return Expression(FieldNameExpression(self.name), "<=", other)
-   def __or__(self, other):
-      
+
 
 
 
@@ -260,4 +299,6 @@ if __name__ == "__main__":
    tm = Person()
    print tm.gen_create_table_sqlite3()
    print tm.filter(first_name=5, last_name__ne=10)
-   print (Person.first_name == 5).gen()
+   print (Person.first_name == 5).gen(ENGINE_SQLITE3)
+
+   print ((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
