@@ -43,17 +43,17 @@ class Expression(object):
 
    def gen(self, engine, **kw):
       s = StringIO()
-      if isinstance(self.left, Expression):
-         s.write(self.left.gen(engine, **kw))
-      else:
-         s.write(convert_to_sql(self.left, engine))
+      self.gen_simple_expression(engine, self.left, s)
       s.write(self.op)
-      if isinstance(self.right, Expression):
-         s.write(self.right.gen(engine, **kw))
-      else:
-         s.write(convert_to_sql(self.right, engine))
-
+      self.gen_simple_expression(engine, self.right, s)
       return s.getvalue()
+
+   @classmethod
+   def gen_simple_expression(cls, engine, value, stream, **kw):
+      if isinstance(value, Expression):
+         stream.write(value.gen(engine, **kw))
+      else:
+         stream.write(convert_to_sql(value, engine))
 
    def __or__(self, other):
       return BooleanExpression(self, "OR", other)
@@ -69,17 +69,11 @@ class BooleanExpression(Expression):
    def gen(self, engine, **kw):
       s = StringIO()
       s.write("(")
-      if isinstance(self.left, Expression):
-         s.write(self.left.gen(engine, **kw))
-      else:
-         s.write(convert_to_sql(self.left, engine))
+      self.gen_simple_expression(engine, self.left, s)
       s.write(") ")
       s.write(self.op)
       s.write(" (")
-      if isinstance(self.right, Expression):
-         s.write(self.right.gen(engine, **kw))
-      else:
-         s.write(convert_to_sql(self.right, engine))
+      self.gen_simple_expression(engine, self.right, s)
       s.write(")")
       return s.getvalue()
 
@@ -98,6 +92,50 @@ class FieldNameExpression(Expression):
          return name
       else:
          return alias+"."+name
+
+class InExpression(Expression):
+   def __init__(self, left, query_or_collection):
+      if not isinstance(query_or_collection, SelectQuery) and\
+         type(query_or_collection) not in (types.ListType, types.TupleType, type(set())):
+         raise TypeError("To qualify for an in() operator, the parameter must be a SelectQuery or a simple Python collection like list or tuple.")
+
+      self.left = left
+      self.right = query_or_collection
+
+   def gen(self, engine, **kw):
+      o = StringIO()
+      o.write(self.left.gen(engine, **kw))
+      o.write(" IN (")
+      if isinstance(self.right, SelectQuery):
+         o.write(self.right.gen(engine, **kw))
+      else:
+         o.write(",".join([convert_to_sql(x,engine) for x in self.right]))
+      o.write(")")
+      return o.getvalue()
+
+class BetweenExpression(Expression):
+   def __init__(self, left, min_value, max_value):
+      self.left = left
+      self.min_value = min_value
+      self.max_value = max_value
+
+   def gen(self, engine, **kw):
+      s = StringIO()
+      s.write(self.left.gen(engine, **kw))
+      s.write(" BETWEEN ")
+      self.gen_simple_expression(engine, self.min_value, s)
+      s.write(" AND ")
+      self.gen_simple_expression(engine, self.max_value, s)
+      return s.getvalue()
+
+class CorrelatedExpression(Expression):
+   def __init__(self, expr):
+      self.expr = expr
+
+   def gen(self, engine, **kw):
+      s = StringIO()
+      
+
 
 class Field(object):
    def __init__(self, **kw):
@@ -153,7 +191,10 @@ class Field(object):
    def __le__(self, other):
       return Expression(FieldNameExpression(self), "<=", other)
    def between(self, min_value, max_value):
-      pass
+      return BetweenExpression(FieldNameExpression(self), min_value, max_value)
+   def found_in(self, expr):
+      return InExpression(FieldNameExpression(self), expr)
+
 
 class IntegerField(Field):
    def __init__(self, **kw):
@@ -258,6 +299,7 @@ class SelectQuery(object):
       self.fields = []
       self.expr = None
       self.joins = []
+      self.outer_query = None
 
    def gen_sqlite3(self):
       o = StringIO()
@@ -271,14 +313,19 @@ class SelectQuery(object):
       for join_expr, local_alias in self.joins:
          o.write(" ")
          o.write(join_expr.gen_join_field_sqlite3(alias=self.alias,
-                                                  local_alias=local_alias))
+                                                  local_alias=local_alias,
+                                                  query=self,
+                                                  outer_query=self.outer_query))
          o.write(" ")
       if self.expr is not None:
          o.write(" WHERE ")
-         o.write(self.expr.gen(ENGINE_SQLITE3, alias=self.alias))
+         o.write(self.expr.gen(ENGINE_SQLITE3, alias=self.alias,
+                                               query=self,
+                                               outer_query=self.outer_query))
       return o.getvalue()
 
-   def gen(self, engine):
+   def gen(self, engine, **kw):
+      self.outer_query = kw.get("outer_query", None)
       if engine==ENGINE_SQLITE3:
          return self.gen_sqlite3()
 
@@ -396,6 +443,10 @@ class Alias(object):
       return Expression(FieldNameExpression(self), ">=", other)
    def __le__(self, other):
       return Expression(FieldNameExpression(self), "<=", other)
+   def between(self, min_value, max_value):
+      return BetweenExpression(FieldNameExpression(self), min_value, max_value)
+   def found_in(self, expr):
+      return InExpression(FieldNameExpression(self), expr)
 
    def __getattr__(self, item):
       """
@@ -415,6 +466,7 @@ if __name__ == "__main__":
       addr_type = IntegerField()
 
    class Person(Model):
+      id = IntegerField(required=True)
       first_name = IntegerField(required=True)
       last_name = IntegerField(required=True)
       age = IntegerField()
@@ -438,3 +490,8 @@ if __name__ == "__main__":
    print Person.select()\
                .join(ma1)\
                .where((Person.first_name == 5) & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
+
+   q1 = Person.select()\
+               .join(Address.id)\
+               .where(Person.first_name == 5)
+   print Person.select().where(Person.id.found_in(q1)).gen(ENGINE_SQLITE3)
