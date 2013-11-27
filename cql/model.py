@@ -85,15 +85,19 @@ class BooleanExpression(Expression):
 
 
 class FieldNameExpression(Expression):
-   def __init__(self, name):
-      self.name = name
+   def __init__(self, field):
+      self.field = field
 
    def gen(self, engine, **kw):
-      alias = kw.get("alias", None)
+      is_field = isinstance(self.field, Field)
+      # If the field attached to this expression is an Alias we will use the alias value
+      # from that object, otherwise we will use our given alias.
+      alias = kw.get("alias", None) if is_field else self.field.alias
+      name = self.field.name if is_field else self.field.field.name
       if alias is None:
-         return self.name
+         return name
       else:
-         return alias+"."+self.name
+         return alias+"."+name
 
 class Field(object):
    def __init__(self, **kw):
@@ -137,17 +141,17 @@ class Field(object):
          o.write(convert_to_monetdb(self.default_value))
 
    def __eq__(self, other):
-      return Expression(FieldNameExpression(self.name), "=", other)
+      return Expression(FieldNameExpression(self), "=", other)
    def __ne__(self, other):
-      return Expression(FieldNameExpression(self.name), "<>", other)
+      return Expression(FieldNameExpression(self), "<>", other)
    def __gt__(self, other):
-      return Expression(FieldNameExpression(self.name), ">", other)
+      return Expression(FieldNameExpression(self), ">", other)
    def __lt__(self, other):
-      return Expression(FieldNameExpression(self.name), "<", other)
+      return Expression(FieldNameExpression(self), "<", other)
    def __ge__(self, other):
-      return Expression(FieldNameExpression(self.name), ">=", other)
+      return Expression(FieldNameExpression(self), ">=", other)
    def __le__(self, other):
-      return Expression(FieldNameExpression(self.name), "<=", other)
+      return Expression(FieldNameExpression(self), "<=", other)
    def between(self, min_value, max_value):
       pass
 
@@ -289,7 +293,7 @@ class SelectQuery(object):
    def join(self, join_field):
       fields = self.base_table.get_fields()
       join_on = join_field
-      if isinstance(join_field, ModelAlias):
+      if isinstance(join_field, Alias):
          join_field = join_on.field
          join_alias = join_on.alias
       else:
@@ -374,10 +378,32 @@ class Model(object):
 
       return predicates
 
-class ModelAlias(object):
+class Alias(object):
    def __init__(self, field):
       self.field = field
       self.alias = "_" + field.model.get_table_name() + str(id(self))
+      self.model_fields = field.model.get_fields()
+
+   def __eq__(self, other):
+      return Expression(FieldNameExpression(self), "=", other)
+   def __ne__(self, other):
+      return Expression(FieldNameExpression(self), "<>", other)
+   def __gt__(self, other):
+      return Expression(FieldNameExpression(self), ">", other)
+   def __lt__(self, other):
+      return Expression(FieldNameExpression(self), "<", other)
+   def __ge__(self, other):
+      return Expression(FieldNameExpression(self), ">=", other)
+   def __le__(self, other):
+      return Expression(FieldNameExpression(self), "<=", other)
+
+   def __getattr__(self, item):
+      """
+      Proxy the access to the model.
+      """
+      if item in self.model_fields:
+         return self
+      raise AttributeError("%s is not a field in the %s model." % (item, self.field.model.get_table_name()))
 
 if __name__ == "__main__":
    fi = IntegerField(name="test_int_field", default=5, required=True)
@@ -386,7 +412,7 @@ if __name__ == "__main__":
 
    class Address(Model):
       id = IntegerField(required=True)
-      add_type = IntegerField()
+      addr_type = IntegerField()
 
    class Person(Model):
       first_name = IntegerField(required=True)
@@ -408,7 +434,7 @@ if __name__ == "__main__":
                .join(Address.id)\
                .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
 
-   ma1 = ModelAlias(Address.id)
+   ma1 = Alias(Address.id)
    print Person.select()\
                .join(ma1)\
-               .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
+               .where((Person.first_name == 5) & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
