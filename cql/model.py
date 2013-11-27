@@ -41,15 +41,15 @@ class Expression(object):
       self.op = op
       self.right = right
 
-   def gen(self, engine):
+   def gen(self, engine, **kw):
       s = StringIO()
       if isinstance(self.left, Expression):
-         s.write(self.left.gen(engine))
+         s.write(self.left.gen(engine, **kw))
       else:
          s.write(convert_to_sql(self.left, engine))
       s.write(self.op)
       if isinstance(self.right, Expression):
-         s.write(self.right.gen(engine))
+         s.write(self.right.gen(engine, **kw))
       else:
          s.write(convert_to_sql(self.right, engine))
 
@@ -66,18 +66,18 @@ class BooleanExpression(Expression):
    def __init__(self, left, op, right):
       Expression.__init__(self, left, op, right)
 
-   def gen(self, engine):
+   def gen(self, engine, **kw):
       s = StringIO()
       s.write("(")
       if isinstance(self.left, Expression):
-         s.write(self.left.gen(engine))
+         s.write(self.left.gen(engine, **kw))
       else:
          s.write(convert_to_sql(self.left, engine))
       s.write(") ")
       s.write(self.op)
       s.write(" (")
       if isinstance(self.right, Expression):
-         s.write(self.right.gen(engine))
+         s.write(self.right.gen(engine, **kw))
       else:
          s.write(convert_to_sql(self.right, engine))
       s.write(")")
@@ -88,8 +88,12 @@ class FieldNameExpression(Expression):
    def __init__(self, name):
       self.name = name
 
-   def gen(self, engine):
-      return self.name
+   def gen(self, engine, **kw):
+      alias = kw.get("alias", None)
+      if alias is None:
+         return self.name
+      else:
+         return alias+"."+self.name
 
 class Field(object):
    def __init__(self, **kw):
@@ -140,10 +144,8 @@ class Field(object):
       return Expression(FieldNameExpression(self.name), ">=", other)
    def __le__(self, other):
       return Expression(FieldNameExpression(self.name), "<=", other)
-
-
-
-
+   def between(self, min_value, max_value):
+      pass
 
 class IntegerField(Field):
    def __init__(self, **kw):
@@ -220,9 +222,41 @@ class OneToManyField(Field):
 
       return o.getvalue()
 
+class SelectQuery(object):
+   def __init__(self, base_table):
+      self.base_table = base_table
+      self.alias = "_" + base_table.get_table_name() + str(id(self))
+      self.fields = None
+      self.expr = None
+
+   def gen_sqlite3(self):
+      o = StringIO()
+      o.write("SELECT ")
+      if self.fields is None:
+         o.write("* ")
+      o.write("FROM ")
+      o.write(self.base_table.get_table_name())
+      o.write(" AS ")
+      o.write(self.alias)
+      if self.expr is not None:
+         o.write(" WHERE ")
+         o.write(self.expr.gen(ENGINE_SQLITE3, alias=self.alias))
+      return o.getvalue()
+
+   def gen(self, engine):
+      if engine==ENGINE_SQLITE3:
+         return self.gen_sqlite3()
+
+   def where(self, expr):
+      if self.expr is not None:
+         self.expr = BooleanExpression(self.expr, "AND", expr)
+      else:
+         self.expr = expr
+
+      return self
+
 
 class Model(object):
-
    @classmethod
    def get_fields(cls):
       if hasattr(cls, "_model_fields"):
@@ -238,13 +272,15 @@ class Model(object):
       setattr(cls, "_model_fields", fields)
       return fields
 
-   def get_table_name(self):
-      return type(self).__name__.lower()
+   @classmethod
+   def get_table_name(cls):
+      return cls.__name__.lower()
 
    def gen_create_table_sqlite3(self):
+      t = type(self)
       o = StringIO()
       o.write("CREATE TABLE ")
-      o.write(self.get_table_name())
+      o.write(t.get_table_name())
       o.write(" (")
       o.write(", ".join([field.gen_create_field_sqlite3() \
                           for field in type(self).get_fields().values()]))
@@ -258,6 +294,10 @@ class Model(object):
       else:
          # Default behaviour
          return object.__getattribute__(self, name)
+
+   @classmethod
+   def select(cls, **kw):
+      return SelectQuery(cls)
 
    @classmethod
    def filter(cls, **kw):
@@ -300,5 +340,5 @@ if __name__ == "__main__":
    print tm.gen_create_table_sqlite3()
    print tm.filter(first_name=5, last_name__ne=10)
    print (Person.first_name == 5).gen(ENGINE_SQLITE3)
-
    print ((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
+   print Person.select().where((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
