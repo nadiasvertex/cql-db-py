@@ -43,9 +43,9 @@ class Expression(object):
 
    def gen(self, engine, **kw):
       s = StringIO()
-      self.gen_simple_expression(engine, self.left, s)
+      self.gen_simple_expression(engine, self.left, s, **kw)
       s.write(self.op)
-      self.gen_simple_expression(engine, self.right, s)
+      self.gen_simple_expression(engine, self.right, s, **kw)
       return s.getvalue()
 
    @classmethod
@@ -69,11 +69,11 @@ class BooleanExpression(Expression):
    def gen(self, engine, **kw):
       s = StringIO()
       s.write("(")
-      self.gen_simple_expression(engine, self.left, s)
+      self.gen_simple_expression(engine, self.left, s, **kw)
       s.write(") ")
       s.write(self.op)
       s.write(" (")
-      self.gen_simple_expression(engine, self.right, s)
+      self.gen_simple_expression(engine, self.right, s, **kw)
       s.write(")")
       return s.getvalue()
 
@@ -123,9 +123,9 @@ class BetweenExpression(Expression):
       s = StringIO()
       s.write(self.left.gen(engine, **kw))
       s.write(" BETWEEN ")
-      self.gen_simple_expression(engine, self.min_value, s)
+      self.gen_simple_expression(engine, self.min_value, s, **kw)
       s.write(" AND ")
-      self.gen_simple_expression(engine, self.max_value, s)
+      self.gen_simple_expression(engine, self.max_value, s, **kw)
       return s.getvalue()
 
 class CorrelatedExpression(Expression):
