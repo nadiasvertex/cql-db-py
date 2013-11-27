@@ -21,6 +21,7 @@ def convert_to_sqlite3(value):
       return "'%s'" % (value.replace("'", "''"))
    if t in (types.IntType, types.LongType, types.FloatType):
       return str(value)
+   raise TypeError("Unable to convert '%s' to sqlite3 value." % type(value))
 
 def convert_to_monetdb(value):
    t = type(value)
@@ -28,6 +29,7 @@ def convert_to_monetdb(value):
       return "'%s'" % (value.replace("'", "''"))
    if t in (types.IntType, types.LongType, types.FloatType):
       return str(value)
+   raise TypeError("Unable to convert '%s' to monetdb value." % type(value))
 
 def convert_to_sql(value, engine):
    if engine==ENGINE_SQLITE3:
@@ -178,20 +180,25 @@ class Field(object):
          o.write(" DEFAULT ")
          o.write(convert_to_monetdb(self.default_value))
 
+   def _wrap_expr(self, e):
+      if isinstance(e, Field):
+         return FieldNameExpression(e)
+      return e
    def __eq__(self, other):
-      return Expression(FieldNameExpression(self), "=", other)
+      return Expression(FieldNameExpression(self), "=", self._wrap_expr(other))
    def __ne__(self, other):
-      return Expression(FieldNameExpression(self), "<>", other)
+      return Expression(FieldNameExpression(self), "<>", self._wrap_expr(other))
    def __gt__(self, other):
-      return Expression(FieldNameExpression(self), ">", other)
+      return Expression(FieldNameExpression(self), ">", self._wrap_expr(other))
    def __lt__(self, other):
-      return Expression(FieldNameExpression(self), "<", other)
+      return Expression(FieldNameExpression(self), "<", self._wrap_expr(other))
    def __ge__(self, other):
-      return Expression(FieldNameExpression(self), ">=", other)
+      return Expression(FieldNameExpression(self), ">=", self._wrap_expr(other))
    def __le__(self, other):
-      return Expression(FieldNameExpression(self), "<=", other)
+      return Expression(FieldNameExpression(self), "<=", self._wrap_expr(other))
    def between(self, min_value, max_value):
-      return BetweenExpression(FieldNameExpression(self), min_value, max_value)
+      return BetweenExpression(FieldNameExpression(self), self._wrap_expr(
+         min_value), self._wrap_expr(max_value))
    def found_in(self, expr):
       return InExpression(FieldNameExpression(self), expr)
 
@@ -431,20 +438,25 @@ class Alias(object):
       self.alias = "_" + field.model.get_table_name() + str(id(self))
       self.model_fields = field.model.get_fields()
 
+   def _wrap_expr(self, e):
+      if isinstance(e, Field):
+         return FieldNameExpression(e)
+      return e
    def __eq__(self, other):
-      return Expression(FieldNameExpression(self), "=", other)
+      return Expression(FieldNameExpression(self), "=", self._wrap_expr(other))
    def __ne__(self, other):
-      return Expression(FieldNameExpression(self), "<>", other)
+      return Expression(FieldNameExpression(self), "<>", self._wrap_expr(other))
    def __gt__(self, other):
-      return Expression(FieldNameExpression(self), ">", other)
+      return Expression(FieldNameExpression(self), ">", self._wrap_expr(other))
    def __lt__(self, other):
-      return Expression(FieldNameExpression(self), "<", other)
+      return Expression(FieldNameExpression(self), "<", self._wrap_expr(other))
    def __ge__(self, other):
-      return Expression(FieldNameExpression(self), ">=", other)
+      return Expression(FieldNameExpression(self), ">=", self._wrap_expr(other))
    def __le__(self, other):
-      return Expression(FieldNameExpression(self), "<=", other)
+      return Expression(FieldNameExpression(self), "<=", self._wrap_expr(other))
    def between(self, min_value, max_value):
-      return BetweenExpression(FieldNameExpression(self), min_value, max_value)
+      return BetweenExpression(FieldNameExpression(self), self._wrap_expr(
+         min_value), self._wrap_expr(max_value))
    def found_in(self, expr):
       return InExpression(FieldNameExpression(self), expr)
 
@@ -454,7 +466,8 @@ class Alias(object):
       """
       if item in self.model_fields:
          return self
-      raise AttributeError("%s is not a field in the %s model." % (item, self.field.model.get_table_name()))
+      else:
+         return getattr(self.field.model, item)
 
 if __name__ == "__main__":
    fi = IntegerField(name="test_int_field", default=5, required=True)
@@ -495,3 +508,11 @@ if __name__ == "__main__":
                .join(Address.id)\
                .where(Person.first_name == 5)
    print Person.select().where(Person.id.found_in(q1)).gen(ENGINE_SQLITE3)
+
+   ma2 = Alias(Person.address_id)
+   q2 = Address.select()\
+               .where((Address.addr_type==1) &\
+                      (ma2.address_id==Address.id))
+
+   print ma2.select()\
+               .where(Person.address_id.found_in(q2)).gen(ENGINE_SQLITE3)
