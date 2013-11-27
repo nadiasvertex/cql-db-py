@@ -98,6 +98,7 @@ class FieldNameExpression(Expression):
 class Field(object):
    def __init__(self, **kw):
       self.name = kw.get("name", None)
+      self.model = kw.get("model", None)
       self.is_required = kw.get("required", False)
       self.is_unique = kw.get("unique", False)
       self.default_value = kw.get("default", None)
@@ -111,6 +112,9 @@ class Field(object):
 
    def set_name(self, name):
       self.name = name
+
+   def set_model(self, model):
+      self.model = model
 
    def gen_common_sqlite3(self, o):
       if self.is_unique:
@@ -184,9 +188,9 @@ class IntegerField(Field):
       return o.getvalue()
 
 class OneToManyField(Field):
-   def __init__(self, other_model, **kw):
+   def __init__(self, other_model_field, **kw):
       Field.__init__(self, **kw)
-      self.other_table = other_model
+      self.other_model_field = other_model_field
 
    @staticmethod
    def gen_type_sqlite3():
@@ -203,6 +207,27 @@ class OneToManyField(Field):
    @staticmethod
    def convert_to_sql(value):
       return str(value)
+
+   def gen_join_field_sqlite3(self, **kw):
+      alias = kw.get("alias", None)
+      local_alias = kw.get("local_alias", None)
+      o = StringIO()
+      o.write("INNER JOIN ")
+      o.write(self.other_model_field.model.get_table_name())
+      if local_alias:
+         o.write(" AS ")
+         o.write(local_alias)
+      o.write(" ON ")
+      if alias:
+         o.write(alias)
+         o.write(".")
+      o.write(self.name)
+      o.write("=")
+      if local_alias:
+         o.write(local_alias)
+         o.write(".")
+      o.write(self.other_model_field.name)
+      return o.getvalue()
 
    def gen_create_field_sqlite3(self):
       o = StringIO()
@@ -226,18 +251,24 @@ class SelectQuery(object):
    def __init__(self, base_table):
       self.base_table = base_table
       self.alias = "_" + base_table.get_table_name() + str(id(self))
-      self.fields = None
+      self.fields = []
       self.expr = None
+      self.joins = []
 
    def gen_sqlite3(self):
       o = StringIO()
       o.write("SELECT ")
-      if self.fields is None:
+      if not self.fields:
          o.write("* ")
       o.write("FROM ")
       o.write(self.base_table.get_table_name())
       o.write(" AS ")
       o.write(self.alias)
+      for join_expr, local_alias in self.joins:
+         o.write(" ")
+         o.write(join_expr.gen_join_field_sqlite3(alias=self.alias,
+                                                  local_alias=local_alias))
+         o.write(" ")
       if self.expr is not None:
          o.write(" WHERE ")
          o.write(self.expr.gen(ENGINE_SQLITE3, alias=self.alias))
@@ -255,6 +286,17 @@ class SelectQuery(object):
 
       return self
 
+   def join(self, join_field):
+      fields = self.base_table.get_fields()
+      for field in fields.values():
+         if isinstance(field, OneToManyField):
+            if field.other_model_field == join_field:
+               alias = "_" + join_field.model.get_table_name() + str(id(self))
+               self.joins.append((field, alias))
+               return self
+
+      raise ReferenceError()
+
 
 class Model(object):
    @classmethod
@@ -268,6 +310,7 @@ class Model(object):
          if isinstance(a, Field):
             fields[attr]=a
             a.set_name(attr)
+            a.set_model(cls)
 
       setattr(cls, "_model_fields", fields)
       return fields
@@ -331,14 +374,25 @@ if __name__ == "__main__":
    print fi.gen_create_field_sqlite3()
    print fi.gen_create_field_monetdb()
 
+   class Address(Model):
+      id = IntegerField(required=True)
+
    class Person(Model):
       first_name = IntegerField(required=True)
       last_name = IntegerField(required=True)
       age = IntegerField()
+      address_id = OneToManyField(Address.id)
 
    tm = Person()
+   am = Address()
    print tm.gen_create_table_sqlite3()
+   print am.gen_create_table_sqlite3()
    print tm.filter(first_name=5, last_name__ne=10)
    print (Person.first_name == 5).gen(ENGINE_SQLITE3)
    print ((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
+
+   print Person.address_id.gen_join_field_sqlite3(alias="p1", local_alias="a1")
    print Person.select().where((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
+   print Person.select()\
+               .join(Address.id)\
+               .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
