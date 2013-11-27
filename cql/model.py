@@ -288,11 +288,17 @@ class SelectQuery(object):
 
    def join(self, join_field):
       fields = self.base_table.get_fields()
+      join_on = join_field
+      if isinstance(join_field, ModelAlias):
+         join_field = join_on.field
+         join_alias = join_on.alias
+      else:
+         join_alias = "_" + join_field.model.get_table_name() + str(id(self))
+
       for field in fields.values():
          if isinstance(field, OneToManyField):
             if field.other_model_field == join_field:
-               alias = "_" + join_field.model.get_table_name() + str(id(self))
-               self.joins.append((field, alias))
+               self.joins.append((field, join_alias))
                return self
 
       raise ReferenceError()
@@ -368,6 +374,10 @@ class Model(object):
 
       return predicates
 
+class ModelAlias(object):
+   def __init__(self, field):
+      self.field = field
+      self.alias = "_" + field.model.get_table_name() + str(id(self))
 
 if __name__ == "__main__":
    fi = IntegerField(name="test_int_field", default=5, required=True)
@@ -376,6 +386,7 @@ if __name__ == "__main__":
 
    class Address(Model):
       id = IntegerField(required=True)
+      add_type = IntegerField()
 
    class Person(Model):
       first_name = IntegerField(required=True)
@@ -395,4 +406,9 @@ if __name__ == "__main__":
    print Person.select().where((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
    print Person.select()\
                .join(Address.id)\
+               .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
+
+   ma1 = ModelAlias(Address.id)
+   print Person.select()\
+               .join(ma1)\
                .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
