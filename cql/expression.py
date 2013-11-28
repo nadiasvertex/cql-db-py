@@ -1,6 +1,9 @@
 __author__ = 'cnelson'
 
 from cStringIO import StringIO
+from common import convert_to_sql
+
+import types
 
 class Expression(object):
    def __init__(self, left, op, right):
@@ -50,6 +53,7 @@ class FieldNameExpression(Expression):
       self.field = field
 
    def gen(self, engine, **kw):
+      from field import Field
       is_field = isinstance(self.field, Field)
       # If the field attached to this expression is an Alias we will use the alias value
       # from that object, otherwise we will use our given alias.
@@ -62,6 +66,7 @@ class FieldNameExpression(Expression):
 
 class InExpression(Expression):
    def __init__(self, left, query_or_collection):
+      from query import SelectQuery
       if not isinstance(query_or_collection, SelectQuery) and\
          type(query_or_collection) not in (types.ListType, types.TupleType, type(set())):
          raise TypeError("To qualify for an in() operator, the parameter must be a SelectQuery or a simple Python collection like list or tuple.")
@@ -70,6 +75,8 @@ class InExpression(Expression):
       self.right = query_or_collection
 
    def gen(self, engine, **kw):
+      from query import SelectQuery
+
       o = StringIO()
       o.write(self.left.gen(engine, **kw))
       o.write(" IN (")
