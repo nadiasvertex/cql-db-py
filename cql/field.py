@@ -173,45 +173,46 @@ class OneToManyField(Field):
       return o.getvalue()
 
 
-class TestIntegerField(unittest.TestCase):
-
-   def setUp(self):
-      self.fi = IntegerField(name="test_int_field", default=5, required=True)
-
-   def testCreateSqlite3(self):
-      fragment = self.fi.gen_create_field_sqlite3()
-      self.assertEqual(fragment, "test_int_field INTEGER NOT NULL DEFAULT 5")
-
-   def testCreateMonetDb(self):
-      fragment = self.fi.gen_create_field_monetdb()
-      self.assertEqual(fragment, "test_int_field BIGINT NOT NULL DEFAULT 5")
-
-class TestStringField(unittest.TestCase):
-
-   def setUp(self):
-      self.fi = StringField(name="test_str_field", default="jessica", required=True)
-
-   def testCreateSqlite3(self):
-      fragment = self.fi.gen_create_field_sqlite3()
-      self.assertEqual(fragment, "test_str_field TEXT NOT NULL DEFAULT 'jessica'")
-
-   def testCreateMonetDb(self):
-      fragment = self.fi.gen_create_field_monetdb()
-      self.assertEqual(fragment, "test_str_field STRING NOT NULL DEFAULT 'jessica'")
-
-class TestStringField(unittest.TestCase):
-
-   def setUp(self):
-      self.fi = FloatField(name="test_flt_field", default=1.1, required=True)
-
-   def testCreateSqlite3(self):
-      fragment = self.fi.gen_create_field_sqlite3()
-      self.assertEqual(fragment, "test_flt_field REAL NOT NULL DEFAULT 1.1")
-
-   def testCreateMonetDb(self):
-      fragment = self.fi.gen_create_field_monetdb()
-      self.assertEqual(fragment, "test_flt_field FLOAT NOT NULL DEFAULT 1.1")
 
 
 if __name__ == '__main__':
+   class TestIntegerField(unittest.TestCase):
+
+      def setUp(self):
+         self.fi = IntegerField(name="test_int_field", default=5, required=True)
+
+      def testCreateSqlite3(self):
+         fragment = self.fi.gen_create_field_sqlite3()
+         self.assertEqual(fragment, "test_int_field INTEGER NOT NULL DEFAULT 5")
+
+      def testCreateMonetDb(self):
+         fragment = self.fi.gen_create_field_monetdb()
+         self.assertEqual(fragment, "test_int_field BIGINT NOT NULL DEFAULT 5")
+
+   class TestStringField(unittest.TestCase):
+
+      def setUp(self):
+         self.fi = StringField(name="test_str_field", default="jessica", required=True)
+
+      def testCreateSqlite3(self):
+         fragment = self.fi.gen_create_field_sqlite3()
+         self.assertEqual(fragment, "test_str_field TEXT NOT NULL DEFAULT 'jessica'")
+
+      def testCreateMonetDb(self):
+         fragment = self.fi.gen_create_field_monetdb()
+         self.assertEqual(fragment, "test_str_field STRING NOT NULL DEFAULT 'jessica'")
+
+   class TestStringField(unittest.TestCase):
+
+      def setUp(self):
+         self.fi = FloatField(name="test_flt_field", default=1.1, required=True)
+
+      def testCreateSqlite3(self):
+         fragment = self.fi.gen_create_field_sqlite3()
+         self.assertEqual(fragment, "test_flt_field REAL NOT NULL DEFAULT 1.1")
+
+      def testCreateMonetDb(self):
+         fragment = self.fi.gen_create_field_monetdb()
+         self.assertEqual(fragment, "test_flt_field FLOAT NOT NULL DEFAULT 1.1")
+
    unittest.main()

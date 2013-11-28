@@ -2,6 +2,7 @@ __author__ = 'cnelson'
 
 from cStringIO import StringIO
 from common import ENGINE_SQLITE3, ENGINE_MONETDB
+import unittest
 
 class SelectQuery(object):
    def __init__(self, base_table):
@@ -70,3 +71,45 @@ class SelectQuery(object):
 
       raise ReferenceError()
 
+
+if __name__ == "__main__":
+   class TestSelect(unittest.TestCase):
+      from model import Model
+      from field import IntegerField, StringField
+      from common import ENGINE_SQLITE3, ENGINE_MONETDB
+
+      class Address(Model):
+         id = TestSelect.IntegerField(required=True)
+         addr_type = TestSelect.IntegerField()
+
+      class Person(Model):
+         id = TestSelect.IntegerField(required=True)
+         first_name = TestSelect.StringField(required=True)
+         last_name = TestSelect.StringField(required=True)
+         age = TestSelect.IntegerField()
+         address_id = TestSelect.OneToManyField(TestSelect.Address.id)
+
+      def setUp(self):
+         self.tm = TestSelect.Person()
+         self.am = TestSelect.Address()
+
+      def testGenerateJoinField(self):
+         sql = TestSelect.Person.address_id.gen_join_field_sqlite3(alias="p1", local_alias="a1")
+      def testGenerateSelectWithPredicates(self):
+         sql = TestSelect.Person.select()\
+                                .where((TestSelect.Person.first_name == 'jessica') &
+                                       (TestSelect.Person.last_name == 'nelson'))\
+                                .gen(ENGINE_SQLITE3)
+      def testGenerateJoin(self):
+         sql = TestSelect.Person.select()\
+                     .join(TestSelect.Address.id)\
+                     .where(TestSelect.Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
+
+      def testGenerateSubselect(self):
+         q1 = TestSelect.Person.select()\
+                     .join(TestSelect.Address.id)\
+                     .where(TestSelect.Person.first_name == 'jessica')
+         sql = TestSelect.Person.select().where(TestSelect.Person.id.found_in(q1)).gen(ENGINE_SQLITE3)
+
+
+   unittest.main()
