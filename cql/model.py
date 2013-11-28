@@ -7,12 +7,14 @@ from query import SelectQuery
 import unittest
 
 
+def _postprocess_model(model):
+   model.cache_fields()
+   return model
+
+@_postprocess_model
 class Model(object):
    @classmethod
-   def get_fields(cls):
-      if hasattr(cls, "_model_fields"):
-         return getattr(cls, "_model_fields")
-
+   def cache_fields(cls):
       fields = {}
       for attr in dir(cls):
          a = getattr(cls, attr)
@@ -21,12 +23,32 @@ class Model(object):
             a.set_name(attr)
             a.set_model(cls)
 
+      # Check to make sure we have a primary key field
+      pk = cls.get_primary_key_name()
+      if pk not in fields:
+         pk_field = IntegerField(required=True)
+         pk_field.set_name(pk)
+         pk_field.set_model(cls)
+         fields[pk] = pk_field
+
+      # Cache the data fields dictionary.
       setattr(cls, "_model_fields", fields)
-      return fields
+
+   @classmethod
+   def get_fields(cls):
+      return cls._model_fields
 
    @classmethod
    def get_table_name(cls):
       return cls.__name__.lower()
+
+   @classmethod
+   def get_primary_key_name(cls):
+      return cls.get_table_name() + "_id"
+
+   @classmethod
+   def get_primary_key_field(cls):
+      return getattr(cls, cls.get_primary_key_name())
 
    @classmethod
    def gen_create_table_sqlite3(cls):
@@ -208,63 +230,59 @@ class Alias(object):
       else:
          return getattr(self.field.model, item)
 
+## ==---------- Tests ------------------------------------------------------------------------------------------------==
 if __name__ == "__main__":
-   fi = IntegerField(name="test_int_field", default=5, required=True)
-   print fi.gen_create_field_sqlite3()
-   print fi.gen_create_field_monetdb()
-
    class Address(Model):
-      id = IntegerField(required=True)
-      addr_type = IntegerField()
+         addr_type = IntegerField()
 
    class Person(Model):
-      id = IntegerField(required=True)
       first_name = StringField(required=True)
       last_name = StringField(required=True)
       age = IntegerField()
-      address_id = OneToManyField(Address.id)
+      address_id = OneToManyField(Address.address_id)
 
-   tm = Person()
-   am = Address()
-   print tm.gen_create_table(ENGINE_SQLITE3)
-   print tm.gen_create_table(ENGINE_MONETDB)
-   print am.gen_create_table(ENGINE_SQLITE3)
-   print am.gen_create_table(ENGINE_MONETDB)
+   class TestModel(unittest.TestCase):
+      def setUp(self):
+         self.tm = Person()
+         self.am = Address()
 
-   print (Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
-   print ((Person.first_name == 'jessica') & (Person.last_name == 'nelson')).gen(ENGINE_SQLITE3)
+      def testCreatePersonTableSqlite3(self):
+         sql = self.tm.gen_create_table(ENGINE_SQLITE3)
 
-   print Person.address_id.gen_join_field_sqlite3(alias="p1", local_alias="a1")
-   print Person.select().where((Person.first_name == 'jessica') & (Person.last_name == 'nelson')).gen(ENGINE_SQLITE3)
-   print Person.select()\
-               .join(Address.id)\
-               .where(Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
+      def testCreatePersonTableMonetDb(self):
+         sql = self.tm.gen_create_table(ENGINE_MONETDB)
 
-   ma1 = Alias(Address.id)
-   print Person.select()\
-               .join(ma1)\
-               .where((Person.first_name == 'jessica') & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
+      def testCreateAddressTableSqlite3(self):
+         sql = self.am.gen_create_table(ENGINE_SQLITE3)
 
-   q1 = Person.select()\
-               .join(Address.id)\
-               .where(Person.first_name == 'jessica')
-   print Person.select().where(Person.id.found_in(q1)).gen(ENGINE_SQLITE3)
+      def testCreateAddressTableMonetDb(self):
+         sql = self.am.gen_create_table(ENGINE_MONETDB)
 
-   # Testing correlated queries which don't work yet.
-   ma2 = Alias(Person.address_id)
-   q2 = Address.select()\
-               .where((Address.addr_type==1) &\
-                      (ma2.address_id==Address.id))
+      def testAlias(self):
+         ma1 = Alias(Address.address_id)
+         sql = Person.select()\
+                  .join(ma1)\
+                  .where((Person.first_name == 'jessica') & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
 
-   print ma2.select()\
-               .where(Person.address_id.found_in(q2)).gen(ENGINE_SQLITE3)
-   #############################################################################
+      def testInsertModel(self):
+         p1 = Person.new(first_name='jessica')
+         sql = Person.gen_insert_sqlite3(p1)
 
-   p1 = Person.new(first_name='jessica')
-   print Person.gen_insert_sqlite3(p1)
+      def testUpdateModel(self):
+         p1 = Person.new(first_name='jessica')
+         p1.save()
+         p1.first_name = None
+         p1.last_name = 'nelson'
+         self.assertNotEquals(0, len(p1.dirty_))
+         sql = Person.gen_save(ENGINE_SQLITE3, p1)
 
-   p1.save()
-   p1.first_name = None
-   p1.last_name = 'nelson'
-   print p1.dirty_
-   print Person.gen_save(ENGINE_SQLITE3, p1)
+   unittest.main()
+
+
+
+
+
+
+
+
+

@@ -101,3 +101,34 @@ class BetweenExpression(Expression):
       s.write(" AND ")
       self.gen_simple_expression(engine, self.max_value, s, **kw)
       return s.getvalue()
+
+if __name__ == "__main__":
+   import unittest
+
+   from model import Model
+   from field import IntegerField, StringField, OneToManyField
+   from common import ENGINE_SQLITE3, ENGINE_MONETDB
+
+   class Address(Model):
+         id = IntegerField(required=True)
+         addr_type = IntegerField()
+
+   class Person(Model):
+      id = IntegerField(required=True)
+      first_name = StringField(required=True)
+      last_name = StringField(required=True)
+      age = IntegerField()
+      address_id = OneToManyField(Address.id)
+
+   class TestExpr(unittest.TestCase):
+      def setUp(self):
+         self.tm = Person()
+         self.am = Address()
+
+      def testBinaryExpression(self):
+         sql = (Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
+
+      def testBooleanExpression(self):
+         sql =((Person.first_name == 'jessica') & (Person.last_name == 'nelson')).gen(ENGINE_SQLITE3)
+
+   unittest.main()
