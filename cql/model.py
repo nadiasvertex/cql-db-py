@@ -446,13 +446,46 @@ class Model(object):
 
       return predicates
 
-   def __getattribute__(self, name):
-      field = type(self).get_fields().get(name, None)
-      if field:
-         return field.convert_to_python()
-      else:
-         # Default behaviour
-         return object.__getattribute__(self, name)
+   @classmethod
+   def new(cls, session=None, **kwargs):
+      '''
+      Create a new instance of a model to hold actual data.
+
+      :param session: The session to connect to.
+      :param kwargs: Initializers for each field, or other options.
+      :return: A plain old data object initialized as requested and configured
+               to have the same fields as the model.
+      '''
+      return Pod(session, cls, **kwargs)
+
+
+class Pod(object):
+   def __init__(self, session, model, **kwargs):
+      self.session_ = session
+      self.fields_ = model.get_fields()
+      for field in self.fields_:
+         setattr(self, field, kwargs.get(field))
+
+   def load(self, row, col_spec):
+      '''
+      Loads this object from the row.
+
+      :param row: The row of data to return.
+      :param col_spec: A tuple containing the names of the columns in the same
+                      order as the row.
+      :return: None
+      '''
+      for i, v in enumerate(col_spec):
+         setattr(self, v, row[i])
+
+   def save(self):
+      '''
+      Saves this object to the persistent store.
+
+      :return: None
+      '''
+      pass
+
 
 
 class Alias(object):
@@ -542,4 +575,6 @@ if __name__ == "__main__":
 
    print ma2.select()\
                .where(Person.address_id.found_in(q2)).gen(ENGINE_SQLITE3)
+   #############################################################################
 
+   print dir(Person.new(first_name='jessica'))
