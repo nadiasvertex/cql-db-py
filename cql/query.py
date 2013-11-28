@@ -2,9 +2,6 @@ __author__ = 'cnelson'
 
 from cStringIO import StringIO
 from common import ENGINE_SQLITE3, ENGINE_MONETDB
-from expression import BooleanExpression
-from field import OneToManyField
-from model import Alias
 
 class SelectQuery(object):
    def __init__(self, base_table):
@@ -44,6 +41,8 @@ class SelectQuery(object):
          return self.gen_sqlite3()
 
    def where(self, expr):
+      from expression import BooleanExpression
+
       if self.expr is not None:
          self.expr = BooleanExpression(self.expr, "AND", expr)
       else:
@@ -52,6 +51,9 @@ class SelectQuery(object):
       return self
 
    def join(self, join_field):
+      from model import Alias
+      from field import OneToManyField
+
       fields = self.base_table.get_fields()
       join_on = join_field
       if isinstance(join_field, Alias):

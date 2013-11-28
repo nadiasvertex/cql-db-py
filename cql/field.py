@@ -1,5 +1,7 @@
 __author__ = 'cnelson'
 
+import unittest
+
 from cStringIO import StringIO
 from common import convert_to_sqlite3, convert_to_monetdb
 from expression import *
@@ -169,3 +171,34 @@ class OneToManyField(Field):
          o.write(".")
       o.write(self.other_model_field.name)
       return o.getvalue()
+
+
+class TestIntegerField(unittest.TestCase):
+
+   def setUp(self):
+      self.fi = IntegerField(name="test_int_field", default=5, required=True)
+
+   def testCreateSqlite3(self):
+      fragment = self.fi.gen_create_field_sqlite3()
+      self.assertEqual(fragment, "test_int_field INTEGER NOT NULL DEFAULT 5")
+
+   def testCreateMonetDb(self):
+      fragment = self.fi.gen_create_field_monetdb()
+      self.assertEqual(fragment, "test_int_field BIGINT NOT NULL DEFAULT 5")
+
+class TestStringField(unittest.TestCase):
+
+   def setUp(self):
+      self.fi = StringField(name="test_str_field", default="jessica", required=True)
+
+   def testCreateSqlite3(self):
+      fragment = self.fi.gen_create_field_sqlite3()
+      self.assertEqual(fragment, "test_str_field TEXT NOT NULL DEFAULT 'jessica'")
+
+   def testCreateMonetDb(self):
+      fragment = self.fi.gen_create_field_monetdb()
+      self.assertEqual(fragment, "test_str_field STRING NOT NULL DEFAULT 'jessica'")
+
+
+if __name__ == '__main__':
+   unittest.main()
