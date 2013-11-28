@@ -180,6 +180,24 @@ class Field(object):
          o.write(" DEFAULT ")
          o.write(convert_to_monetdb(self.default_value))
 
+   def gen_create_field_sqlite3(self):
+      o = StringIO()
+      o.write(self.name)
+      o.write(" ")
+      o.write(self.gen_type_sqlite3())
+      self.gen_common_sqlite3(o)
+
+      return o.getvalue()
+
+   def gen_create_field_monetdb(self):
+      o = StringIO()
+      o.write(self.name)
+      o.write(" ")
+      o.write(self.gen_type_monetdb())
+      self.gen_common_monetdb(o)
+
+      return o.getvalue()
+
    def _wrap_expr(self, e):
       if isinstance(e, Field):
          return FieldNameExpression(e)
@@ -202,7 +220,6 @@ class Field(object):
    def found_in(self, expr):
       return InExpression(FieldNameExpression(self), expr)
 
-
 class IntegerField(Field):
    def __init__(self, **kw):
       Field.__init__(self, **kw)
@@ -218,26 +235,36 @@ class IntegerField(Field):
    def convert_to_python(self):
       return int(self.value)
 
-   def convert_to_sql(self):
+class StringField(Field):
+   def __init__(self, **kw):
+      Field.__init__(self, **kw)
+
+   @staticmethod
+   def gen_type_sqlite3():
+      return "TEXT"
+
+   @staticmethod
+   def gen_type_monetdb():
+      return "STRING"
+
+   def convert_to_python(self):
       return str(self.value)
 
-   def gen_create_field_sqlite3(self):
-      o = StringIO()
-      o.write(self.name)
-      o.write(" ")
-      o.write(IntegerField.gen_type_sqlite3())
-      self.gen_common_sqlite3(o)
+class FloatField(Field):
+   def __init__(self, **kw):
+      Field.__init__(self, **kw)
 
-      return o.getvalue()
+   @staticmethod
+   def gen_type_sqlite3():
+      return "REAL"
 
-   def gen_create_field_monetdb(self):
-      o = StringIO()
-      o.write(self.name)
-      o.write(" ")
-      o.write(IntegerField.gen_type_monetdb())
-      self.gen_common_monetdb(o)
+   @staticmethod
+   def gen_type_monetdb():
+      return "FLOAT"
 
-      return o.getvalue()
+   def convert_to_python(self):
+      return float(self.value)
+
 
 class OneToManyField(Field):
    def __init__(self, other_model_field, **kw):
@@ -252,13 +279,8 @@ class OneToManyField(Field):
    def gen_type_monetdb():
       return "BIGINT"
 
-   @staticmethod
-   def convert_to_python(value):
-      return int(value)
-
-   @staticmethod
-   def convert_to_sql(value):
-      return str(value)
+   def convert_to_python(self):
+      return int(self.value)
 
    def gen_join_field_sqlite3(self, **kw):
       alias = kw.get("alias", None)
@@ -279,24 +301,6 @@ class OneToManyField(Field):
          o.write(local_alias)
          o.write(".")
       o.write(self.other_model_field.name)
-      return o.getvalue()
-
-   def gen_create_field_sqlite3(self):
-      o = StringIO()
-      o.write(self.name)
-      o.write(" ")
-      o.write(IntegerField.gen_type_sqlite3())
-      self.gen_common_sqlite3(o)
-
-      return o.getvalue()
-
-   def gen_create_field_monetdb(self):
-      o = StringIO()
-      o.write(self.name)
-      o.write(" ")
-      o.write(IntegerField.gen_type_monetdb())
-      self.gen_common_monetdb(o)
-
       return o.getvalue()
 
 class SelectQuery(object):
@@ -383,24 +387,34 @@ class Model(object):
    def get_table_name(cls):
       return cls.__name__.lower()
 
-   def gen_create_table_sqlite3(self):
-      t = type(self)
+   @classmethod
+   def gen_create_table_sqlite3(cls):
       o = StringIO()
       o.write("CREATE TABLE ")
-      o.write(t.get_table_name())
+      o.write(cls.get_table_name())
       o.write(" (")
       o.write(", ".join([field.gen_create_field_sqlite3() \
-                          for field in type(self).get_fields().values()]))
+                          for field in cls.get_fields().values()]))
       o.write(")")
       return o.getvalue()
 
-   def __getattribute__(self, name):
-      field = type(self).get_fields().get(name, None)
-      if field:
-         return field.convert_to_python()
+   @classmethod
+   def gen_create_table_monetdb(cls):
+      o = StringIO()
+      o.write("CREATE TABLE ")
+      o.write(cls.get_table_name())
+      o.write(" (")
+      o.write(", ".join([field.gen_create_field_monetdb() \
+                          for field in cls.get_fields().values()]))
+      o.write(")")
+      return o.getvalue()
+
+   @classmethod
+   def gen_create_table(cls, engine):
+      if engine==ENGINE_SQLITE3:
+         return cls.gen_create_table_sqlite3()
       else:
-         # Default behaviour
-         return object.__getattribute__(self, name)
+         return cls.gen_create_table_monetdb()
 
    @classmethod
    def select(cls, **kw):
@@ -431,6 +445,15 @@ class Model(object):
                predicates.append("%s=%s" % (arg,convert_to_sqlite3(value)))
 
       return predicates
+
+   def __getattribute__(self, name):
+      field = type(self).get_fields().get(name, None)
+      if field:
+         return field.convert_to_python()
+      else:
+         # Default behaviour
+         return object.__getattribute__(self, name)
+
 
 class Alias(object):
    def __init__(self, field):
@@ -480,35 +503,38 @@ if __name__ == "__main__":
 
    class Person(Model):
       id = IntegerField(required=True)
-      first_name = IntegerField(required=True)
-      last_name = IntegerField(required=True)
+      first_name = StringField(required=True)
+      last_name = StringField(required=True)
       age = IntegerField()
       address_id = OneToManyField(Address.id)
 
    tm = Person()
    am = Address()
-   print tm.gen_create_table_sqlite3()
-   print am.gen_create_table_sqlite3()
-   print tm.filter(first_name=5, last_name__ne=10)
-   print (Person.first_name == 5).gen(ENGINE_SQLITE3)
-   print ((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
+   print tm.gen_create_table(ENGINE_SQLITE3)
+   print tm.gen_create_table(ENGINE_MONETDB)
+   print am.gen_create_table(ENGINE_SQLITE3)
+   print am.gen_create_table(ENGINE_MONETDB)
+   print tm.filter(first_name='jessica', last_name__ne='thweatt')
+   print (Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
+   print ((Person.first_name == 'jessica') & (Person.last_name == 'nelson')).gen(ENGINE_SQLITE3)
 
    print Person.address_id.gen_join_field_sqlite3(alias="p1", local_alias="a1")
-   print Person.select().where((Person.first_name == 5) & (Person.last_name == 10)).gen(ENGINE_SQLITE3)
+   print Person.select().where((Person.first_name == 'jessica') & (Person.last_name == 'nelson')).gen(ENGINE_SQLITE3)
    print Person.select()\
                .join(Address.id)\
-               .where(Person.first_name == 5).gen(ENGINE_SQLITE3)
+               .where(Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
 
    ma1 = Alias(Address.id)
    print Person.select()\
                .join(ma1)\
-               .where((Person.first_name == 5) & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
+               .where((Person.first_name == 'jessica') & (ma1.addr_type == 1)).gen(ENGINE_SQLITE3)
 
    q1 = Person.select()\
                .join(Address.id)\
-               .where(Person.first_name == 5)
+               .where(Person.first_name == 'jessica')
    print Person.select().where(Person.id.found_in(q1)).gen(ENGINE_SQLITE3)
 
+   # Testing correlated queries which don't work yet.
    ma2 = Alias(Person.address_id)
    q2 = Address.select()\
                .where((Address.addr_type==1) &\
@@ -516,3 +542,4 @@ if __name__ == "__main__":
 
    print ma2.select()\
                .where(Person.address_id.found_in(q2)).gen(ENGINE_SQLITE3)
+
