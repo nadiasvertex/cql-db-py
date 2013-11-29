@@ -27,7 +27,7 @@ class Cache(object):
       pass
 
    def execute(self, sql):
-      self.cache.execute(sql)
+      return self.cache.execute(sql)
 
 ## ==---------- Tests ------------------------------------------------------------------------------------------------==
 if __name__ == "__main__":
@@ -68,6 +68,14 @@ if __name__ == "__main__":
          am = Address.new(self.cache)
          am.addr_type = 10
          am.save()
+
+         rowcount=0
+         for row in self.cache.execute("SELECT address_id, addr_type from address;"):
+            rowcount+=1
+            self.assertEqual(0, row[0])
+            self.assertEqual(10, row[1])
+
+         self.assertEqual(1, rowcount)
 
 
    unittest.main()
