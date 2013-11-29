@@ -6,6 +6,12 @@ from query import SelectQuery
 
 import unittest
 
+def _next_id(start=0):
+   i = start
+   while True:
+      yield i
+      i+=1
+
 class ModelMeta(type):
    models = {}
 
@@ -42,6 +48,8 @@ class ModelMeta(type):
 
 class Model(object):
    __metaclass__ = ModelMeta
+
+   pk_seq_ = _next_id()
 
    @classmethod
    def get_fields(cls):
@@ -145,25 +153,29 @@ class Model(object):
       return SelectQuery(cls)
 
    @classmethod
-   def new(cls, session=None, **kwargs):
+   def new(cls, cache=None, **kwargs):
       '''
       Create a new instance of a model to hold actual data.
 
-      :param session: The session to connect to.
+      :param cache: The cache object to use.
       :param kwargs: Initializers for each field, or other options.
       :return: A plain old data object initialized as requested and configured
                to have the same fields as the model.
       '''
-      return Pod(session, cls, **kwargs)
+      return Pod(cache, cls, **kwargs)
 
    @classmethod
    def save(cls, pod):
-      sql = cls.gen_insert_sqlite3(pod)
+      pk = cls.get_primary_key_name()
+      if getattr(pod, pk) is None:
+         setattr(pod, pk, cls.pk_seq_.next())
 
+      sql = cls.gen_insert_sqlite3(pod)
+      pod.cache_.execute(sql)
 
 class Pod(object):
-   def __init__(self, session, model, **kwargs):
-      self.session_ = session
+   def __init__(self, cache, model, **kwargs):
+      self.cache_ = cache
       self.fields_ = model.get_fields()
       self.model_ = model
       self.dirty_ = {}
