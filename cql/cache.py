@@ -27,7 +27,7 @@ class Cache(object):
       pass
 
    def execute(self, sql):
-      pass
+      self.cache.execute(sql)
 
 ## ==---------- Tests ------------------------------------------------------------------------------------------------==
 if __name__ == "__main__":
@@ -48,11 +48,9 @@ if __name__ == "__main__":
 
    class TestCache(unittest.TestCase):
       def setUp(self):
-         self.tm = Person()
-         self.am = Address()
-
          self.w = Warehouse("/tmp/test_warehouse", "letmein", port=60001)
          self.db = Database(self.w, "testdb")
+         self.cache = Cache(self.db, "test", "pass")
 
       def tearDown(self):
          self.db.stop()
@@ -60,8 +58,16 @@ if __name__ == "__main__":
          self.w.stop()
          self.w.destroy()
 
-      def testCreateCache(self):
-         cache = Cache(self.db, "test", "pass")
+
+      def testCreateSchema(self):
+         # The following SQL should not throw.
+         self.cache.execute("SELECT * FROM person;")
+         self.cache.execute("SELECT * FROM address;")
+
+      def testSaveDataInCache(self):
+         am = Address.new(self.cache)
+         am.addr_type = 10
+         am.save()
 
 
    unittest.main()
