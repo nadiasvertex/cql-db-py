@@ -94,23 +94,43 @@ if __name__ == "__main__":
 
       def testGenerateJoinField(self):
          sql = Person.address_id.gen_join_field_sqlite3(alias="p1", local_alias="a1")
+         self.assertEqual("INNER JOIN address AS a1 ON p1.address_id=a1.address_id", sql)
 
       def testGenerateSelectWithPredicates(self):
-         sql = Person.select()\
-                                .where((Person.first_name == 'jessica') &
-                                       (Person.last_name == 'nelson'))\
-                                .gen(ENGINE_SQLITE3)
+         q = Person.select()\
+                 .where((Person.first_name == 'jessica') &
+                        (Person.last_name == 'nelson'))
+         sql = q.gen(ENGINE_SQLITE3)
+         expected = ("SELECT * FROM person AS {alias} " +\
+                    "WHERE ({alias}.first_name='jessica') "+\
+                    "AND ({alias}.last_name='nelson')").format(alias=q.alias)
+         self.assertEqual(expected, sql)
 
       def testGenerateJoin(self):
-         sql = Person.select()\
+         q = Person.select()\
                      .join(Address.address_id)\
-                     .where(Person.first_name == 'jessica').gen(ENGINE_SQLITE3)
+                     .where(Person.first_name == 'jessica')
+         sql = q.gen(ENGINE_SQLITE3)
+         expected = ("SELECT * FROM person AS {person_alias} "+\
+                     "INNER JOIN address AS {addr_alias} "+\
+                     "ON {person_alias}.address_id={addr_alias}.address_id  "+\
+                     "WHERE {person_alias}.first_name='jessica'").format(person_alias=q.alias, addr_alias=q.joins[0][1])
+         self.assertEqual(expected, sql)
 
       def testGenerateSubselect(self):
          q1 = Person.select()\
                      .join(Address.address_id)\
                      .where(Person.first_name == 'jessica')
-         sql = Person.select().where(Person.person_id.found_in(q1)).gen(ENGINE_SQLITE3)
-
+         q2 = Person.select().where(Person.person_id.found_in(q1))
+         sql=q2.gen(ENGINE_SQLITE3)
+         expected = ("SELECT * FROM person AS {person_alias_2} "+\
+                     "WHERE {person_alias_2}.person_id IN "+\
+                     "(SELECT * FROM person AS {person_alias_1} "+\
+                     "INNER JOIN address AS {addr_alias} "+\
+                     "ON {person_alias_1}.address_id={addr_alias}.address_id  "+\
+                     "WHERE {person_alias_1}.first_name='jessica')").format(person_alias_1=q1.alias,
+                                                                            person_alias_2=q2.alias,
+                                                                            addr_alias=q1.joins[0][1])
+         self.assertEqual(expected, sql)
 
    unittest.main()
