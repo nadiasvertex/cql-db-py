@@ -8,6 +8,9 @@ import unittest
 
 
 def _postprocess_model(model):
+   if model is Model:
+      return
+
    model.cache_fields()
    return model
 
