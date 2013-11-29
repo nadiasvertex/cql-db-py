@@ -285,12 +285,3 @@ if __name__ == "__main__":
          sql = Person.gen_save(ENGINE_SQLITE3, p1)
 
    unittest.main()
-
-
-
-
-
-
-
-
-
