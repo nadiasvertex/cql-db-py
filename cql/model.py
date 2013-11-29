@@ -7,35 +7,37 @@ from query import SelectQuery
 import unittest
 
 
-def _postprocess_model(model):
-   if model is Model:
-      return
 
-   model.cache_fields()
-   return model
 
-@_postprocess_model
-class Model(object):
-   @classmethod
-   def cache_fields(cls):
+class ModelMeta(type):
+   def __new__(cls, name, bases, attributes, **kwargs):
+      print "in->", name, attributes, kwargs
       fields = {}
-      for attr in dir(cls):
-         a = getattr(cls, attr)
-         if isinstance(a, Field):
-            fields[attr]=a
-            a.set_name(attr)
-            a.set_model(cls)
+      for attr_name, member in attributes.iteritems():
+         if isinstance(member, Field):
+            fields[attr_name]=member
+            member.set_name(attr_name)
+            member.set_model(cls)
 
       # Check to make sure we have a primary key field
-      pk = cls.get_primary_key_name()
+      pk = name.lower() + "_id"
       if pk not in fields:
          pk_field = IntegerField(required=True)
          pk_field.set_name(pk)
          pk_field.set_model(cls)
          fields[pk] = pk_field
+         attributes[pk] = pk_field
 
       # Cache the data fields dictionary.
-      setattr(cls, "_model_fields", fields)
+      attributes["_model_fields"] = fields
+
+      print "out->", name, attributes
+
+      # Instantiate the metaclass (producing a class.)
+      return super(ModelMeta, cls).__new__(cls, name, bases, attributes, **kwargs)
+
+class Model(object):
+   __metaclass__ = ModelMeta
 
    @classmethod
    def get_fields(cls):
