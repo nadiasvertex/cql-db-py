@@ -11,13 +11,11 @@ import unittest
 
 class ModelMeta(type):
    def __new__(cls, name, bases, attributes, **kwargs):
-      print "in->", name, attributes, kwargs
       fields = {}
       for attr_name, member in attributes.iteritems():
          if isinstance(member, Field):
             fields[attr_name]=member
             member.set_name(attr_name)
-            member.set_model(cls)
 
       # Check to make sure we have a primary key field
       pk = name.lower() + "_id"
@@ -31,10 +29,14 @@ class ModelMeta(type):
       # Cache the data fields dictionary.
       attributes["_model_fields"] = fields
 
-      print "out->", name, attributes
-
       # Instantiate the metaclass (producing a class.)
-      return super(ModelMeta, cls).__new__(cls, name, bases, attributes, **kwargs)
+      new_class = super(ModelMeta, cls).__new__(cls, name, bases, attributes, **kwargs)
+
+      # Update the model members with a link to their model class.
+      for member in fields.values():
+         member.set_model(new_class)
+
+      return new_class
 
 class Model(object):
    __metaclass__ = ModelMeta
@@ -118,7 +120,7 @@ class Model(object):
       o.write(" SET ")
       o.write(" ".join([key + "=" + convert_to_sql(value, ENGINE_SQLITE3) for key,value in valued_tuples.iteritems()]))
       o.write(" WHERE id=")
-      o.write(convert_to_sql(pod.id, ENGINE_SQLITE3))
+      o.write(convert_to_sql(getattr(pod, pod.model_.get_primary_key_name()), ENGINE_SQLITE3))
       return o.getvalue()
 
    @classmethod
@@ -201,8 +203,9 @@ class Pod(object):
 class Alias(object):
    def __init__(self, field):
       self.field = field
-      self.alias = "_" + field.model.get_table_name() + str(id(self))
-      self.model_fields = field.model.get_fields()
+      self.model = field.model
+      self.alias = "_" + self.model.get_table_name() + str(id(self))
+      self.model_fields = self.model.get_fields()
 
    def _wrap_expr(self, e):
       if isinstance(e, Field):
@@ -233,7 +236,7 @@ class Alias(object):
       if item in self.model_fields:
          return self
       else:
-         return getattr(self.field.model, item)
+         return getattr(self.model, item)
 
 ## ==---------- Tests ------------------------------------------------------------------------------------------------==
 if __name__ == "__main__":
