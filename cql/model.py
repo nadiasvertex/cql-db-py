@@ -6,10 +6,9 @@ from query import SelectQuery
 
 import unittest
 
-
-
-
 class ModelMeta(type):
+   models = {}
+
    def __new__(cls, name, bases, attributes, **kwargs):
       fields = {}
       for attr_name, member in attributes.iteritems():
@@ -35,6 +34,9 @@ class ModelMeta(type):
       # Update the model members with a link to their model class.
       for member in fields.values():
          member.set_model(new_class)
+
+      # Remember the model for initialization
+      cls.models[name] = new_class
 
       return new_class
 
