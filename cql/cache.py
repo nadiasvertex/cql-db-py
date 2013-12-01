@@ -1,6 +1,22 @@
 import sqlite3
 from common import ENGINE_MONETDB, ENGINE_SQLITE3
 from concurrent import futures
+from functools import partial
+
+class SameThreadFuture(object):
+   """
+   Emulates a future. This is used for sqlite3 objects because they can't
+   be run on a separate thread from the one they were created on.
+   """
+   def __init__(self, func, *args, **kwargs):
+      self._runnable = partial(func, *args, **kwargs)
+      self._result = None
+
+   def result(self):
+      if self._result is None:
+         self._result = self._runnable()
+
+      return self._result
 
 class CacheResultsIterator(object):
    def __init__(self, cache_cursor, store_cursor):
@@ -8,40 +24,46 @@ class CacheResultsIterator(object):
       self.cache_cursor = cache_cursor
       self.store_cursor = store_cursor
 
-      self.result_pools = [
-       self.pool.submit(self.cache_cursor.fetchmany),
-       self.pool.submit(self.store_cursor.fetchmany)
-      ]
+      self.result_pools = []
+      self._submit()
 
       self.result_pool = None
       self.result_index = 0
+
+   def _submit(self):
+      # Fetch from the cache first, it is probably faster.
+      data = SameThreadFuture(self.cache_cursor.fetchmany)
+      # If we have data, append the pool to the result pools.
+      if data.result():
+         self.result_pools.append(data)
+      # Issue a request to the backing store.
+      self.result_pools.append(self.pool.submit(self.store_cursor.fetchmany))
 
    def __iter__(self):
       return self
 
    def _read_result(self, result_pool):
-      '''
+      """
       Reads a single result from a result pool.
 
       :param result_pool:  The result pool to read from.
       :return: The data. If data is None then this result pool has
       been exhausted.
-      '''
+      """
+
       if len(result_pool) == 0:
          return None
 
-      if len(result_pool) < self.result_index:
+      if len(result_pool) <= self.result_index:
          # Re-issue a fetch, but indicate that we need to switch pools
-         self.result_pools.append(
-            self.pool.submit(self.cache_cursor.fetchmany)
-         )
+         self._submit()
          self.result_index = 0
          return None
 
       current_index = self.result_index
       self.result_index += 1
 
-      return result_pool[self.result_index]
+      return result_pool[current_index]
 
 
    def next(self):
@@ -49,19 +71,23 @@ class CacheResultsIterator(object):
       Provide the next result. Note that results are read from the cache and
       the persistent store in an undefined order.
 
-      :return: The result.
+      :return: The next result.
       '''
       if self.result_pool is None:
-         if not self.result_pools:
+         if len(self.result_pools)==0:
+            self.pool.shutdown()
             raise StopIteration()
 
          self.result_pool=self.result_pools.pop()
 
-      result = self._read_result(self.result_pool)
+      # Fetch a record from the result pool. This operation may
+      # block if the underlying fetch has not completed.
+      result = self._read_result(self.result_pool.result())
 
       # If the result is None then this pool has been exhausted. Recursively
       # defer to the next pool for results.
       if result is None:
+         self.result_pool = None
          return self.next()
 
       # provide the result
@@ -70,7 +96,8 @@ class CacheResultsIterator(object):
 class Cache(object):
    """
    This object manages the cache. All data is initially written into the cache.
-   Over time, in the background, data is migrated into the persistent store.
+   Over time, in the background, data is migrated into the persistent
+   store.
    """
    def __init__(self, database, username, password):
       self.store = database.connect()
@@ -182,8 +209,9 @@ class Cache(object):
       store_cursor.execute(query.gen(ENGINE_MONETDB))
 
       # Issue the cache query execution.
+      cq = query.gen(ENGINE_SQLITE3)
       cache_cursor = self.cache.cursor()
-      cache_cursor.execute(query.gen(ENGINE_SQLITE3))
+      cache_cursor.execute(cq)
 
       # Provide an iterator object over the results.
       return CacheResultsIterator(cache_cursor, store_cursor)
@@ -230,7 +258,7 @@ if __name__ == "__main__":
 
    class TestCache(unittest.TestCase):
       def setUp(self):
-         self.w = Warehouse("/tmp/test_warehouse", "letmein", port=60001)
+         self.w = Warehouse("/tmp/test_warehouse", "letmein", port=60002)
          self.db = Database(self.w, "testdb")
          self.cache = Cache(self.db, "test", "pass")
 
@@ -301,7 +329,6 @@ if __name__ == "__main__":
          am.save()
 
          q = self.cache.starting_with(Address)\
-                       .where(Address.addr_type == 10)\
                        .select(Address.address_id)
 
          rowcount = 0
