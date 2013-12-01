@@ -149,8 +149,8 @@ class Model(object):
 
 
    @classmethod
-   def select(cls, **kw):
-      return SelectQuery(cls)
+   def select(cls, cache=None, **kw):
+      return SelectQuery(cls, cache=cache)
 
    @classmethod
    def new(cls, cache=None, **kwargs):
