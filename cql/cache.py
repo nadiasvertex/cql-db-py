@@ -1,4 +1,71 @@
 import sqlite3
+from common import ENGINE_MONETDB, ENGINE_SQLITE3
+from concurrent import futures
+
+class CacheResultsIterator(object):
+   def __init__(self, cache_cursor, store_cursor):
+      self.pool = futures.ThreadPoolExecutor(max_workers=2)
+      self.cache_cursor = cache_cursor
+      self.store_cursor = store_cursor
+
+      self.result_pools = [
+       self.pool.submit(self.cache_cursor.fetchmany),
+       self.pool.submit(self.store_cursor.fetchmany)
+      ]
+
+      self.result_pool = None
+      self.result_index = 0
+
+   def __iter__(self):
+      return self
+
+   def _read_result(self, result_pool):
+      '''
+      Reads a single result from a result pool.
+
+      :param result_pool:  The result pool to read from.
+      :return: The data. If data is None then this result pool has
+      been exhausted.
+      '''
+      if len(result_pool) == 0:
+         return None
+
+      if len(result_pool) < self.result_index:
+         # Re-issue a fetch, but indicate that we need to switch pools
+         self.result_pools.append(
+            self.pool.submit(self.cache_cursor.fetchmany)
+         )
+         self.result_index = 0
+         return None
+
+      current_index = self.result_index
+      self.result_index += 1
+
+      return result_pool[self.result_index]
+
+
+   def next(self):
+      '''
+      Provide the next result. Note that results are read from the cache and
+      the persistent store in an undefined order.
+
+      :return: The result.
+      '''
+      if self.result_pool is None:
+         if not self.result_pools:
+            raise StopIteration()
+
+         self.result_pool=self.result_pools.pop()
+
+      result = self._read_result(self.result_pool)
+
+      # If the result is None then this pool has been exhausted. Recursively
+      # defer to the next pool for results.
+      if result is None:
+         return self.next()
+
+      # provide the result
+      return result
 
 class Cache(object):
    """
@@ -85,10 +152,64 @@ class Cache(object):
       self.store.commit()
 
    def execute(self, sql):
+      '''
+      Execute some SQL against the cache.
+
+      :param sql: The SQL to execute.
+      :return: A DB-API2 style iterator of the query results against the cache.
+      '''
       return self.cache.execute(sql)
 
    def commit(self):
+      '''
+      Commit the current transaction in the cache.
+      :return: None
+      '''
       self.cache.commit()
+
+   def retrieve(self, query):
+      """
+      Executes a query against the entire system. The operation is required to
+      be a SelectQuery.
+
+      :param query: The query to execute.
+      :return: An iterator which yields up all the results from the query.
+      """
+
+      # Issue the store query execution first in the assumption that it will
+      # take longer.
+      store_cursor = self.store.cursor()
+      store_cursor.execute(query.gen(ENGINE_MONETDB))
+
+      # Issue the cache query execution.
+      cache_cursor = self.cache.cursor()
+      cache_cursor.execute(query.gen(ENGINE_SQLITE3))
+
+      # Provide an iterator object over the results.
+      return CacheResultsIterator(cache_cursor, store_cursor)
+
+   def new(self, model, **kwargs):
+      '''
+      Initializes a new object of the given model. You may specify field
+      names as keyword arguments to provide them with values.
+
+      :param model: The model to use when creating a new object.
+      :return: A plain old data object initialized as requested, and attached to
+      this cache.
+      '''
+      return model.new(cache=self, **kwargs)
+
+   def starting_with(self, model, **kwargs):
+      '''
+      The starting point of a selection query.
+
+      :param model: The model to start with.
+      :param kwargs: Additional settings.
+      :return: A select query.
+      '''
+
+      from query import SelectQuery
+      return SelectQuery(model, cache=self, **kwargs)
 
 ## ==---------- Tests ------------------------------------------------------------------------------------------------==
 if __name__ == "__main__":
@@ -174,7 +295,20 @@ if __name__ == "__main__":
             rowcount+=1
          self.assertEqual(0, rowcount)
 
+      def testStartingWithCacheOnly(self):
+         am = Address.new(self.cache)
+         am.addr_type = 10
+         am.save()
 
+         q = self.cache.starting_with(Address)\
+                       .where(Address.addr_type == 10)\
+                       .select(Address.address_id)
+
+         rowcount = 0
+         for row in q:
+            rowcount += 1
+
+         self.assertEqual(1, rowcount)
 
 
    unittest.main()

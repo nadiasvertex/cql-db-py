@@ -5,20 +5,26 @@ from common import ENGINE_SQLITE3, ENGINE_MONETDB
 import unittest
 
 class SelectQuery(object):
-   def __init__(self, base_table):
+   def __init__(self, base_table, cache=None, **kwargs):
       self.base_table = base_table
       self.alias = "_" + base_table.get_table_name() + str(id(self))
-      self.fields = []
+      self.fields = set([base_table.get_primary_key_field()])
       self.expr = None
       self.joins = []
       self.outer_query = None
+      self.cache = cache
 
-   def gen_sqlite3(self):
+   def __iter__(self):
+      return self.cache.retrieve(self)
+
+   def gen_sqlite3(self, **kw):
       o = StringIO()
       o.write("SELECT ")
       if not self.fields:
-         o.write("* ")
-      o.write("FROM ")
+         o.write("*")
+      else:
+         o.write(",".join([field.name for field in self.fields]))
+      o.write(" FROM ")
       o.write(self.base_table.get_table_name())
       o.write(" AS ")
       o.write(self.alias)
@@ -36,12 +42,57 @@ class SelectQuery(object):
                                                outer_query=self.outer_query))
       return o.getvalue()
 
+   def gen_monetdb(self, **kw):
+      o = StringIO()
+      o.write("SELECT ")
+      if not self.fields:
+         o.write("*")
+      else:
+         o.write(",".join([field.name for field in self.fields]))
+      o.write(" FROM ")
+      o.write(self.base_table.get_table_name())
+      o.write(" AS ")
+      o.write(self.alias)
+      for join_expr, local_alias in self.joins:
+         o.write(" ")
+         o.write(join_expr.gen_join_field_monetdb(alias=self.alias,
+                                                  local_alias=local_alias,
+                                                  query=self,
+                                                  outer_query=self.outer_query))
+         o.write(" ")
+      if self.expr is not None:
+         o.write(" WHERE ")
+         o.write(self.expr.gen(ENGINE_MONETDB, alias=self.alias,
+                                               query=self,
+                                               outer_query=self.outer_query))
+      return o.getvalue()
+
+
    def gen(self, engine, **kw):
       self.outer_query = kw.get("outer_query", None)
       if engine==ENGINE_SQLITE3:
-         return self.gen_sqlite3()
+         return self.gen_sqlite3(**kw)
+      else:
+         return self.gen_monetdb(**kw)
+
+   def select(self, *fields):
+      '''
+      Specify what fields you want.
+
+      :param fields: The fields to select in the query.
+      :return: self
+      '''
+      self.fields = self.fields.union(set(fields))
+      return self
 
    def where(self, expr):
+      '''
+      Specify predicates to reduce the result set and capture only data you
+      are interested in.
+
+      :param expr: A predicate expression.
+      :return: self
+      '''
       from expression import BooleanExpression
 
       if self.expr is not None:
@@ -52,6 +103,12 @@ class SelectQuery(object):
       return self
 
    def join(self, join_field):
+      '''
+      Perform a join on the specified join field.
+
+      :param join_field: The field to join on.
+      :return: self
+      '''
       from model import Alias
       from field import OneToManyField
 

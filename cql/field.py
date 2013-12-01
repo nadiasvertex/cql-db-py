@@ -172,8 +172,8 @@ class OneToManyField(Field):
       o.write(self.other_model_field.name)
       return o.getvalue()
 
-
-
+   def gen_join_field_monetdb(self, **kw):
+      return self.gen_join_field_sqlite3(**kw)
 
 if __name__ == '__main__':
    class TestIntegerField(unittest.TestCase):
