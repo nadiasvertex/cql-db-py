@@ -104,9 +104,6 @@ class Cache(object):
       self.cache = sqlite3.connect(":memory:")
       self._create_schema()
 
-   def __del__(self):
-      self.flush()
-
    def _get_persistent_store_tables(self):
       cur = self.store.cursor()
       cur.execute("SELECT name, type FROM sys.tables WHERE system=false;")
@@ -370,5 +367,46 @@ if __name__ == "__main__":
             rowcount += 1
 
          self.assertEqual(2, rowcount)
+
+      def testFlushMany(self):
+         count=100000
+         for i in range(0,count):
+            am = Address.new(self.cache)
+            am.addr_type = i
+            am.save()
+
+         q = self.cache.starting_with(Address)\
+                       .select(Address.address_id)
+
+         rowcount = 0
+         for row in q:
+            rowcount += 1
+
+         self.assertEqual(count, rowcount)
+
+      def testRetrieveMany(self):
+         count=100000
+         for i in range(0,count):
+            am = Address.new(self.cache)
+            am.addr_type = i
+            am.save()
+
+         self.cache.flush()
+
+         for i in range(0,count):
+            am = Address.new(self.cache)
+            am.addr_type = i
+            am.save()
+
+
+         q = self.cache.starting_with(Address)\
+                       .select(Address.address_id)
+
+         rowcount = 0
+         for row in q:
+            rowcount += 1
+
+         self.assertEqual(count*2, rowcount)
+
 
    unittest.main()
