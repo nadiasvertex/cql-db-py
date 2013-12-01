@@ -337,5 +337,38 @@ if __name__ == "__main__":
 
          self.assertEqual(1, rowcount)
 
+      def testStartingWithStoreOnly(self):
+         am = Address.new(self.cache)
+         am.addr_type = 10
+         am.save()
+         self.cache.flush()
+
+         q = self.cache.starting_with(Address)\
+                       .select(Address.address_id)
+
+         rowcount = 0
+         for row in q:
+            rowcount += 1
+
+         self.assertEqual(1, rowcount)
+
+      def testStartingWith(self):
+         am = Address.new(self.cache)
+         am.addr_type = 10
+         am.save()
+         self.cache.flush()
+
+         am = Address.new(self.cache)
+         am.addr_type = 20
+         am.save()
+
+         q = self.cache.starting_with(Address)\
+                       .select(Address.address_id)
+
+         rowcount = 0
+         for row in q:
+            rowcount += 1
+
+         self.assertEqual(2, rowcount)
 
    unittest.main()
