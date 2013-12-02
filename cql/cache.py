@@ -393,11 +393,10 @@ if __name__ == "__main__":
 
          self.cache.flush()
 
-         for i in range(0,count):
+         for i in range(count,count*2):
             am = Address.new(self.cache)
             am.addr_type = i
             am.save()
-
 
          q = self.cache.starting_with(Address)\
                        .select(Address.address_id)
